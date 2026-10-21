@@ -13,7 +13,13 @@ export type Device = {
   last_seen?: string | null;
 };
 
-export type TransferState = "queued" | "active" | "complete" | "failed" | "cancelled";
+export type TransferState =
+  | "queued"
+  | "active"
+  | "complete"
+  | "failed"
+  | "cancelled"
+  | "declined";
 
 export type Transfer = {
   id: string;
@@ -53,6 +59,21 @@ export type PairingResult = {
   error: string | null;
 };
 
+export type IncomingTransfer = {
+  transfer_id: string;
+  device_id: string;
+  device_name: string;
+  file_name: string;
+  bytes: number;
+  expires_in_secs: number;
+};
+
+export type IncomingResult = {
+  transfer_id: string;
+  accepted: boolean;
+  error: string | null;
+};
+
 export type TransferResult = {
   transfer_id: string;
   file_name: string;
@@ -74,6 +95,8 @@ export const api = {
   unpair: (deviceId: string) => invoke<void>("unpair_device", { deviceId }),
   sendFile: (deviceId: string, path: string) =>
     invoke<string>("send_file", { deviceId, path }),
+  respondTransfer: (transferId: string, accepted: boolean, remember: boolean) =>
+    invoke<void>("respond_transfer", { transferId, accepted, remember }),
   resumeTransfer: (transferId: string) =>
     invoke<void>("resume_transfer", { transferId }),
   cancelTransfer: (transferId: string) =>

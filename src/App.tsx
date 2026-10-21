@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DeviceList } from "./components/DeviceList";
+import { IncomingTransferDialog } from "./components/IncomingTransferDialog";
 import { PairingDialog } from "./components/PairingDialog";
 import { TransferList } from "./components/TransferList";
 import { subscribe } from "./lib/events";
@@ -9,6 +10,8 @@ import {
   type AppStatus,
   type Device,
   type IdentityInfo,
+  type IncomingResult,
+  type IncomingTransfer,
   type PairingPrompt,
   type PairingResult,
   type Transfer,
@@ -23,6 +26,7 @@ export default function App() {
   const [identity, setIdentity] = useState<IdentityInfo | null>(null);
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [prompt, setPrompt] = useState<ActivePrompt | null>(null);
+  const [offer, setOffer] = useState<IncomingTransfer | null>(null);
   const [message, setMessage] = useState("Looking for nearby devices…");
   const [busyDevice, setBusyDevice] = useState<string | null>(null);
 
@@ -73,6 +77,16 @@ export default function App() {
               ? "Devices are paired. They will reconnect silently from now on."
               : payload.error ?? "Pairing did not complete.",
           );
+        }),
+        await subscribe<IncomingTransfer>("transfer://incoming", (payload) => {
+          setOffer(payload);
+          setMessage(`${payload.device_name} wants to send ${payload.file_name}.`);
+        }),
+        await subscribe<IncomingResult>("transfer://incoming-closed", (payload) => {
+          setOffer((current) =>
+            current && current.transfer_id === payload.transfer_id ? null : current,
+          );
+          if (payload.error) setMessage(payload.error);
         }),
         await subscribe<TransferResult>("transfer://finished", (payload) => {
           setMessage(
@@ -159,6 +173,25 @@ export default function App() {
     }
   }, []);
 
+  const respondToOffer = useCallback(
+    async (accepted: boolean, remember: boolean) => {
+      if (!offer) return;
+      const current = offer;
+      setOffer(null);
+      try {
+        await api.respondTransfer(current.transfer_id, accepted, remember);
+        setMessage(
+          accepted
+            ? `Receiving ${current.file_name} from ${current.device_name}…`
+            : `Declined ${current.file_name}.`,
+        );
+      } catch (error) {
+        setMessage(String(error));
+      }
+    },
+    [offer],
+  );
+
   const cancelTransfer = useCallback(async (transfer: Transfer) => {
     await api.cancelTransfer(transfer.id).catch((error) => setMessage(String(error)));
   }, []);
@@ -220,6 +253,10 @@ export default function App() {
           </>
         ) : null}
       </footer>
+
+      {offer ? (
+        <IncomingTransferDialog offer={offer} onRespond={respondToOffer} />
+      ) : null}
 
       {prompt ? (
         <PairingDialog

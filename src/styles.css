@@ -154,6 +154,20 @@ progress {
   padding: 15px;
   margin: 22px 0;
 }
+.dialog output.file {
+  font-size: 20px;
+  letter-spacing: 0;
+  word-break: break-all;
+  padding: 12px;
+}
+.dialog .remember {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: #4d6056;
+  margin-top: 12px;
+}
 .dialog .muted {
   font-size: 13px;
   text-align: center;

@@ -102,6 +102,20 @@ async fn send_file(
 }
 
 #[tauri::command]
+async fn respond_transfer(
+    state: State<'_, Arc<Shared>>,
+    transfer_id: String,
+    accepted: bool,
+    remember: bool,
+) -> Result<(), String> {
+    if state.decide_incoming(&transfer_id, accepted, remember) {
+        Ok(())
+    } else {
+        Err("that incoming file request is no longer waiting".into())
+    }
+}
+
+#[tauri::command]
 async fn resume_transfer(state: State<'_, Arc<Shared>>, transfer_id: String) -> Result<(), String> {
     transfer::resume(state.inner(), &transfer_id)
 }
@@ -190,6 +204,7 @@ async fn bootstrap(app: tauri::AppHandle) -> Result<Arc<Shared>, String> {
             loop {
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 shared.sweep_pairings();
+                shared.sweep_incoming(Duration::from_secs(60));
             }
         });
     }
@@ -219,6 +234,7 @@ pub fn run() {
             cancel_pairing,
             unpair_device,
             send_file,
+            respond_transfer,
             resume_transfer,
             cancel_transfer
         ])

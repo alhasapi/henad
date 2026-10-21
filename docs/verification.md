@@ -29,7 +29,14 @@ real network.
 
 ## Transfers
 
-- [ ] Send a small text file; it arrives in `Downloads/Henad` with identical content.
+- [ ] Send a small text file; the receiver shows an accept prompt naming the sender and file, and the
+      file arrives in `Downloads/Henad` with identical content after accepting.
+- [ ] Decline an offer: the sender reports that the receiver declined, nothing is written on either
+      side, and the receiver's history shows `declined`.
+- [ ] Tick "always accept files from this device", accept, then send a second file: it arrives with no
+      prompt.
+- [ ] Ignore an incoming offer: after 60 seconds the prompt disappears and the sender is told the
+      offer expired.
 - [ ] Send a 1 GB file; the progress bar advances, speed is plausible, and the received file's
       checksum matches (`sha256sum` / `certutil -hashfile`).
 - [ ] Sending a second file with the same name produces `name (1).ext` rather than overwriting.

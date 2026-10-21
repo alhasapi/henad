@@ -21,7 +21,7 @@ use crate::{
     db::{self, TransferRow, TrustedPeer},
     net::{self, NetError},
     protocol::{ControlMessage, ErrorCode, ProtocolError},
-    state::{IncomingSlot, Shared},
+    state::{IncomingResult, IncomingSlot, IncomingTransfer, PendingIncoming, Shared},
 };
 use std::{
     path::{Path, PathBuf},
@@ -43,6 +43,7 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(15);
 const COMPLETE_TIMEOUT: Duration = Duration::from_secs(60);
 const DATA_TIMEOUT: Duration = Duration::from_secs(60);
 const CONTROL_IDLE: Duration = Duration::from_secs(60 * 60);
+const CONSENT_WINDOW: Duration = Duration::from_secs(60);
 
 /// Validate an outgoing file and queue it. The actual transfer runs in the background.
 pub fn queue(shared: &Arc<Shared>, device_id: &str, path: &str) -> Result<String, String> {
@@ -504,6 +505,30 @@ pub async fn receive_offer(
         }
     };
     let file_name = safe.to_string_lossy().into_owned();
+
+    // Ask the human unless this device was explicitly trusted to send without prompting.
+    let auto = shared
+        .with_db(|db| db::auto_accept(db, &trusted.id))
+        .unwrap_or(false);
+    if !auto && !ask_consent(&shared, &trusted, &transfer_id, &file_name, bytes).await {
+        record_declined(&shared, &trusted, &transfer_id, &file_name, bytes);
+        let _ = net::send_message(
+            &control_writer,
+            &ControlMessage::TransferDecision {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: Uuid::new_v4(),
+                transfer_id: transfer_uuid,
+                accepted: false,
+                error: Some(ProtocolError::new(
+                    ErrorCode::TransferRejected,
+                    "the receiving device declined the transfer",
+                )),
+            },
+        )
+        .await;
+        return Ok(());
+    }
+
     let dir = shared.downloads_dir();
     tokio::fs::create_dir_all(&dir).await?;
     let final_name = collision_name(&file_name, |candidate| dir.join(candidate).exists());
@@ -550,6 +575,70 @@ pub async fn receive_offer(
         0,
     )
     .await
+}
+
+/// Show an incoming-file prompt and wait for the local decision.
+async fn ask_consent(
+    shared: &Arc<Shared>,
+    trusted: &TrustedPeer,
+    transfer_id: &str,
+    file_name: &str,
+    bytes: u64,
+) -> bool {
+    let (tx, rx) = oneshot::channel();
+    let prompt = IncomingTransfer {
+        transfer_id: transfer_id.to_owned(),
+        device_id: trusted.id.clone(),
+        device_name: trusted.name.clone(),
+        file_name: file_name.to_owned(),
+        bytes,
+        expires_in_secs: CONSENT_WINDOW.as_secs(),
+    };
+    if !shared.register_incoming(PendingIncoming {
+        prompt: prompt.clone(),
+        decision: Some(tx),
+        started: std::time::Instant::now(),
+    }) {
+        return false;
+    }
+    shared.events.transfer_incoming(prompt);
+
+    match tokio::time::timeout(CONSENT_WINDOW, rx).await {
+        Ok(Ok((accepted, _remember))) => accepted,
+        _ => {
+            // Timed out or the channel dropped: make sure nothing is left pending.
+            shared.decide_incoming(transfer_id, false, false);
+            shared.events.transfer_incoming_closed(IncomingResult {
+                transfer_id: transfer_id.to_owned(),
+                accepted: false,
+                error: Some("the incoming file request expired".into()),
+            });
+            false
+        }
+    }
+}
+
+/// Keep a history row for declined offers so the sender's attempt is not invisible.
+fn record_declined(
+    shared: &Arc<Shared>,
+    trusted: &TrustedPeer,
+    transfer_id: &str,
+    file_name: &str,
+    bytes: u64,
+) {
+    shared.upsert_transfer(&TransferRow {
+        id: transfer_id.to_owned(),
+        device_id: trusted.id.clone(),
+        device_name: trusted.name.clone(),
+        file_name: file_name.to_owned(),
+        source_path: String::new(),
+        bytes_done: 0,
+        bytes_total: bytes,
+        state: "declined".into(),
+        error: Some("declined on this device".into()),
+        created_at: String::new(),
+    });
+    shared.emit_transfers();
 }
 
 /// Answer `ResumeQuery`, then handle the `ResumeTransfer` that follows on the same channel.

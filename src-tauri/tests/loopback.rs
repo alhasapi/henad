@@ -221,3 +221,136 @@ async fn cancelling_an_unknown_transfer_marks_it_cancelled() {
         row.state
     );
 }
+
+#[tokio::test]
+async fn incoming_offers_wait_for_consent_and_can_be_declined() {
+    let alpha = endpoint("dev-alpha", "Henad on alpha").await;
+    let beta = endpoint("dev-beta", "Henad on beta").await;
+    pair(&alpha, &beta).await;
+
+    // Turn the harness default back off: this test is about the prompt itself.
+    beta.shared
+        .with_db(|db| henad_lib::db::set_auto_accept(db, &alpha.shared.identity.device_id, false))
+        .expect("database")
+        .expect("auto accept");
+
+    let source = alpha.dir.join("offer.txt");
+    fs::write(&source, b"needs consent").unwrap();
+    let transfer_id = transfer::queue(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        source.to_str().unwrap(),
+    )
+    .expect("the file should be queued");
+
+    let prompted = wait_until(
+        || !beta.events.offers.lock().unwrap().is_empty(),
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(prompted, "the receiver should be asked before accepting");
+
+    let prompt = beta.events.offers.lock().unwrap()[0].clone();
+    assert_eq!(prompt.file_name, "offer.txt");
+    assert_eq!(prompt.bytes, 13);
+    assert_eq!(prompt.device_name, "Henad on alpha");
+
+    assert!(beta
+        .shared
+        .decide_incoming(&prompt.transfer_id, false, false));
+
+    let sender_failed = wait_until(
+        || {
+            alpha
+                .shared
+                .transfers()
+                .iter()
+                .any(|t| t.id == transfer_id && t.state == "failed")
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(sender_failed, "the sender should learn about the decline");
+    let sender_row = alpha
+        .shared
+        .transfers()
+        .into_iter()
+        .find(|t| t.id == transfer_id)
+        .expect("sender row");
+    assert!(
+        sender_row
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("declined"),
+        "unexpected sender error {:?}",
+        sender_row.error
+    );
+
+    let receiver_row = beta
+        .shared
+        .transfers()
+        .into_iter()
+        .find(|t| t.file_name == "offer.txt")
+        .expect("the decline is recorded");
+    assert_eq!(receiver_row.state, "declined");
+    assert!(!beta.shared.downloads_dir().join("offer.txt").exists());
+}
+
+#[tokio::test]
+async fn accepting_with_remember_skips_later_prompts() {
+    let alpha = endpoint("dev-alpha", "Henad on alpha").await;
+    let beta = endpoint("dev-beta", "Henad on beta").await;
+    pair(&alpha, &beta).await;
+
+    beta.shared
+        .with_db(|db| henad_lib::db::set_auto_accept(db, &alpha.shared.identity.device_id, false))
+        .expect("database")
+        .expect("auto accept");
+
+    let first = alpha.dir.join("first.txt");
+    fs::write(&first, b"first payload").unwrap();
+    transfer::queue(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        first.to_str().unwrap(),
+    )
+    .expect("first file queued");
+
+    let prompted = wait_until(
+        || !beta.events.offers.lock().unwrap().is_empty(),
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(prompted);
+    let prompt = beta.events.offers.lock().unwrap()[0].clone();
+    assert!(beta.shared.decide_incoming(&prompt.transfer_id, true, true));
+
+    let delivered = wait_until(
+        || beta.shared.downloads_dir().join("first.txt").exists(),
+        Duration::from_secs(20),
+    )
+    .await;
+    assert!(delivered, "the accepted file should arrive");
+
+    let second = alpha.dir.join("second.txt");
+    fs::write(&second, b"second payload").unwrap();
+    transfer::queue(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        second.to_str().unwrap(),
+    )
+    .expect("second file queued");
+
+    let delivered = wait_until(
+        || beta.shared.downloads_dir().join("second.txt").exists(),
+        Duration::from_secs(20),
+    )
+    .await;
+    assert!(delivered, "remembered consent should accept the next file");
+    assert_eq!(
+        beta.events.offers.lock().unwrap().len(),
+        1,
+        "only the first transfer should have prompted"
+    );
+}

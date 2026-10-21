@@ -87,12 +87,16 @@ A peer that proposes a different host key for an already-trusted device is refus
 ## Transfer
 
 1. The sender offers a file: `transfer_offer { transfer_id, name, bytes, blake3: null }`.
-2. The receiver validates the filename (one safe relative component), resolves collisions with
-   `name (1).ext`, creates `<name>.henad-part`, records the row, and accepts.
-3. The sender opens the data channel, sends `transfer_data { transfer_id }`, and streams the bytes,
+2. The receiver validates the filename (one safe relative component) and then asks its user, unless
+   that device was marked "always accept". A declined or unanswered offer (60 s) is answered with
+   `transfer_decision { accepted: false, error: transfer_rejected }` and recorded as `declined` on
+   both sides; no file or staging file is created.
+3. Once accepted, the receiver resolves collisions with `name (1).ext`, creates
+   `<name>.henad-part`, records the row, and answers `transfer_decision { accepted: true }`.
+4. The sender opens the data channel, sends `transfer_data { transfer_id }`, and streams the bytes,
    hashing them as they go. Progress is emitted at most every 250 ms and persisted at most every 2 s.
-4. The sender sends `transfer_complete { completed_bytes, blake3 }` on the control channel.
-5. The receiver compares its own blake3. On success it `fsync`s and renames the staging file, then
+5. The sender sends `transfer_complete { completed_bytes, blake3 }` on the control channel.
+6. The receiver compares its own blake3. On success it `fsync`s and renames the staging file, then
    answers `transfer_status { error: null }`. On mismatch it keeps the `.henad-part` file, records
    `failed`, and answers `transfer_status { error: hash_mismatch }`.
 
@@ -129,6 +133,8 @@ prefix, a resumed file cannot be assembled from bytes the sender did not agree t
 ## Limits
 
 - 8 concurrent inbound connections, 3 authentication attempts, 15 s handshake timeout.
-- Pairing prompts expire after 120 s.
+- Pairing prompts expire after 120 s; incoming file offers after 60 s.
+- Accept/decline is a local policy: "always accept" is stored per device in the trust store and is
+  never negotiated on the wire.
 - `session` channels only: no PTY, no shell, no `exec`, no port forwarding.
 - Control frames are capped at 64 KiB and control buffers at 256 KiB.

@@ -14,10 +14,11 @@ Milestone 1 is implemented end to end:
 - **Pairing** — first contact exchanges real ed25519 identities over SSH; both screens derive the same 8-digit code from both host keys, both client keys, and a nonce from each side. Confirming pins the peer's keys.
 - **Transfer** — a single regular file is streamed over a dedicated SSH channel with blake3 verification on arrival, saved to `Downloads/Henad`, and shown with live progress and speed.
 - **Resume** — an interrupted transfer keeps its partial file; "Resume" continues from the exact byte the receiver already has, and the final hash still covers the whole file.
+- **Consent** — incoming files wait for an accept/decline prompt with an optional "always accept this device"; a declined offer is recorded on both sides.
 - **Trust store and history** — SQLite at the platform data directory; paired devices reconnect silently and transfers survive restarts.
 
-Deferred to later milestones: folder transfer, drag-and-drop, receiver-side accept prompts, transfer
-history filtering, and macOS builds.
+Deferred to later milestones: folder transfer, drag-and-drop, transfer history filtering, and macOS
+builds.
 
 ## Run it
 
@@ -53,7 +54,7 @@ and AppImage bundles and upload them as workflow artifacts.
 | Pairing | SSH with trust-on-first-use host key + a 8-digit code derived from a canonical transcript |
 | Transfer | Dedicated SSH `session` channels; length-prefixed JSON control frames plus a raw byte stream; resumable by offset |
 | Integrity | blake3 of the whole file, compared by the receiver; failures never finalize the file |
-| Storage | SQLite (`user_version` 2) in the platform data dir; keys in `identity_host` / `identity_client` |
+| Storage | SQLite (`user_version` 3) in the platform data dir; keys in `identity_host` / `identity_client` |
 
 See [`docs/protocol.md`](docs/protocol.md) for the wire format and [`docs/verification.md`](docs/verification.md)
 for the two-machine acceptance checklist.

@@ -1,6 +1,8 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Device,
+  IncomingResult,
+  IncomingTransfer,
   PairingPrompt,
   PairingResult,
   Transfer,
@@ -15,7 +17,15 @@ export function subscribe<T>(
   return listen<T>(name, (event) => handler(event.payload));
 }
 
-export type { Device, PairingPrompt, PairingResult, Transfer, TransferResult };
+export type {
+  Device,
+  IncomingResult,
+  IncomingTransfer,
+  PairingPrompt,
+  PairingResult,
+  Transfer,
+  TransferResult,
+};
 
 /** Format the 8-digit code as two groups of four for cross-screen comparison. */
 export function formatCode(code: string): string {

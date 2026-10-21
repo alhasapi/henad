@@ -4,7 +4,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrustedPeer {
@@ -51,6 +51,7 @@ fn migrate(db: &Connection) -> rusqlite::Result<()> {
             host_key BLOB,
             client_key BLOB,
             trusted INTEGER NOT NULL DEFAULT 0,
+            auto_accept INTEGER NOT NULL DEFAULT 0,
             last_seen TEXT
          );
          CREATE TABLE IF NOT EXISTS transfers (
@@ -83,6 +84,11 @@ fn migrate(db: &Connection) -> rusqlite::Result<()> {
             "devices",
             "trusted",
             "ALTER TABLE devices ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "devices",
+            "auto_accept",
+            "ALTER TABLE devices ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 0",
         ),
         (
             "transfers",
@@ -238,6 +244,26 @@ pub fn trust_peer(db: &Connection, peer: &TrustedPeer) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Whether files from this peer are accepted without a prompt.
+pub fn auto_accept(db: &Connection, id: &str) -> bool {
+    db.query_row("SELECT auto_accept FROM devices WHERE id=?", [id], |r| {
+        r.get::<_, i64>(0)
+    })
+    .optional()
+    .ok()
+    .flatten()
+    .unwrap_or(0)
+        != 0
+}
+
+pub fn set_auto_accept(db: &Connection, id: &str, enabled: bool) -> rusqlite::Result<()> {
+    db.execute(
+        "UPDATE devices SET auto_accept=? WHERE id=?",
+        params![i64::from(enabled), id],
+    )?;
+    Ok(())
+}
+
 pub fn touch_peer(db: &Connection, id: &str) -> rusqlite::Result<()> {
     db.execute(
         "UPDATE devices SET last_seen=CURRENT_TIMESTAMP WHERE id=?",
@@ -349,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_schema_is_version_two() {
+    fn fresh_schema_matches_the_current_version() {
         let db = temp_db();
         migrate(&db).unwrap();
         let version: i64 = db
@@ -410,6 +436,27 @@ mod tests {
         unpair(&db, "peer").unwrap();
         assert!(trusted_peer(&db, "peer").is_none());
         assert!(list_trusted(&db).is_empty());
+    }
+
+    #[test]
+    fn auto_accept_is_per_device_and_defaults_off() {
+        let db = temp_db();
+        migrate(&db).unwrap();
+        let peer = TrustedPeer {
+            id: "peer".into(),
+            name: "Laptop".into(),
+            host_key: vec![1],
+            client_key: vec![2],
+            fingerprint: "abcd".into(),
+            last_seen: None,
+        };
+        trust_peer(&db, &peer).unwrap();
+        assert!(!auto_accept(&db, "peer"));
+        set_auto_accept(&db, "peer", true).unwrap();
+        assert!(auto_accept(&db, "peer"));
+        set_auto_accept(&db, "peer", false).unwrap();
+        assert!(!auto_accept(&db, "peer"));
+        assert!(!auto_accept(&db, "unknown"));
     }
 
     #[test]

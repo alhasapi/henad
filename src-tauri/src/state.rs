@@ -67,6 +67,23 @@ pub struct PairingResult {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct IncomingTransfer {
+    pub transfer_id: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub file_name: String,
+    pub bytes: u64,
+    pub expires_in_secs: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct IncomingResult {
+    pub transfer_id: String,
+    pub accepted: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct TransferResult {
     pub transfer_id: String,
     pub file_name: String,
@@ -82,6 +99,8 @@ pub trait Events: Send + Sync + 'static {
     fn pairing_incoming(&self, prompt: PairingPrompt);
     fn pairing_result(&self, result: PairingResult);
     fn transfer_finished(&self, result: TransferResult);
+    fn transfer_incoming(&self, prompt: IncomingTransfer);
+    fn transfer_incoming_closed(&self, result: IncomingResult);
 }
 
 pub struct TauriEvents(pub tauri::AppHandle);
@@ -105,6 +124,12 @@ impl Events for TauriEvents {
     fn transfer_finished(&self, result: TransferResult) {
         let _ = tauri::Emitter::emit(&self.0, "transfer://finished", result);
     }
+    fn transfer_incoming(&self, prompt: IncomingTransfer) {
+        let _ = tauri::Emitter::emit(&self.0, "transfer://incoming", prompt);
+    }
+    fn transfer_incoming_closed(&self, result: IncomingResult) {
+        let _ = tauri::Emitter::emit(&self.0, "transfer://incoming-closed", result);
+    }
 }
 
 pub struct NoEvents;
@@ -116,12 +141,21 @@ impl Events for NoEvents {
     fn pairing_incoming(&self, _prompt: PairingPrompt) {}
     fn pairing_result(&self, _result: PairingResult) {}
     fn transfer_finished(&self, _result: TransferResult) {}
+    fn transfer_incoming(&self, _prompt: IncomingTransfer) {}
+    fn transfer_incoming_closed(&self, _result: IncomingResult) {}
 }
 
 pub struct PendingPairing {
     pub prompt: PairingPrompt,
     pub decision: Option<oneshot::Sender<bool>>,
     pub is_responder: bool,
+    pub started: Instant,
+}
+
+/// An incoming offer waiting for a local accept/decline decision.
+pub struct PendingIncoming {
+    pub prompt: IncomingTransfer,
+    pub decision: Option<oneshot::Sender<(bool, bool)>>,
     pub started: Instant,
 }
 
@@ -157,6 +191,7 @@ pub struct Shared {
     pub events: Arc<dyn Events>,
     pub discovery: Mutex<Option<Arc<Discovery>>>,
     pub pairing: Mutex<HashMap<String, PendingPairing>>,
+    pub incoming_prompts: Mutex<HashMap<String, PendingIncoming>>,
     pub live: Mutex<HashMap<String, LiveTransfer>>,
     pub incoming: Mutex<HashMap<String, IncomingSlot>>,
     pub server_config: Arc<russh::server::Config>,
@@ -191,6 +226,7 @@ impl Shared {
             events,
             discovery: Mutex::new(None),
             pairing: Mutex::new(HashMap::new()),
+            incoming_prompts: Mutex::new(HashMap::new()),
             live: Mutex::new(HashMap::new()),
             incoming: Mutex::new(HashMap::new()),
             server_config,
@@ -379,6 +415,67 @@ impl Shared {
             .lock()
             .ok()
             .and_then(|map| map.get(device_id).map(|p| p.prompt.clone()))
+    }
+
+    /// Ask the user about an incoming offer. Returns false if one is already pending.
+    pub fn register_incoming(&self, pending: PendingIncoming) -> bool {
+        let id = pending.prompt.transfer_id.clone();
+        match self.incoming_prompts.lock() {
+            Ok(mut map) => map.insert(id, pending).is_none(),
+            Err(_) => false,
+        }
+    }
+
+    /// Resolve a pending offer. `remember` makes future offers from that device automatic.
+    pub fn decide_incoming(&self, transfer_id: &str, accepted: bool, remember: bool) -> bool {
+        let taken = self
+            .incoming_prompts
+            .lock()
+            .ok()
+            .and_then(|mut map| map.remove(transfer_id));
+        let Some(mut pending) = taken else {
+            return false;
+        };
+        if accepted && remember {
+            let device_id = pending.prompt.device_id.clone();
+            let _ = self.with_db(|db| db::set_auto_accept(db, &device_id, true));
+        }
+        match pending.decision.take() {
+            Some(tx) => {
+                let _ = tx.send((accepted, remember));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Decline offers nobody answered in time.
+    pub fn sweep_incoming(&self, window: Duration) {
+        let expired: Vec<String> = match self.incoming_prompts.lock() {
+            Ok(map) => map
+                .iter()
+                .filter(|(_, p)| p.started.elapsed() > window)
+                .map(|(id, _)| id.clone())
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        for id in expired {
+            if let Some(mut pending) = self
+                .incoming_prompts
+                .lock()
+                .ok()
+                .and_then(|mut map| map.remove(&id))
+            {
+                if let Some(tx) = pending.decision.take() {
+                    let _ = tx.send((false, false));
+                }
+                self.events.transfer_incoming_closed(IncomingResult {
+                    transfer_id: id,
+                    accepted: false,
+                    error: Some("the incoming file request expired".into()),
+                });
+            }
+        }
     }
 
     pub fn start_live(&self, transfer_id: &str, total: u64) -> Arc<AtomicBool> {

@@ -6,7 +6,8 @@ use henad_lib::discovery::DiscoveredPeer;
 use henad_lib::identity::Identity;
 use henad_lib::service;
 use henad_lib::state::{
-    Device, Events, PairingPrompt, PairingResult, Shared, Transfer, TransferResult,
+    Device, Events, IncomingResult, IncomingTransfer, PairingPrompt, PairingResult, Shared,
+    Transfer, TransferResult,
 };
 use std::{
     fs,
@@ -24,6 +25,8 @@ pub struct Recorder {
     pub incoming: Mutex<Vec<PairingPrompt>>,
     pub results: Mutex<Vec<PairingResult>>,
     pub finished: Mutex<Vec<TransferResult>>,
+    pub offers: Mutex<Vec<IncomingTransfer>>,
+    pub offers_closed: Mutex<Vec<IncomingResult>>,
 }
 
 impl Events for Recorder {
@@ -44,6 +47,12 @@ impl Events for Recorder {
     }
     fn transfer_finished(&self, result: TransferResult) {
         self.finished.lock().unwrap().push(result);
+    }
+    fn transfer_incoming(&self, prompt: IncomingTransfer) {
+        self.offers.lock().unwrap().push(prompt);
+    }
+    fn transfer_incoming_closed(&self, result: IncomingResult) {
+        self.offers_closed.lock().unwrap().push(result);
     }
 }
 
@@ -137,5 +146,16 @@ pub async fn pair(a: &Endpoint, b: &Endpoint) -> (String, String) {
     )
     .await;
     assert!(paired, "both sides should pin the peer after confirming");
+
+    // Tests that are not about consent accept automatically.
+    a.shared
+        .with_db(|db| henad_lib::db::set_auto_accept(db, &b_id, true))
+        .expect("database")
+        .expect("auto accept");
+    b.shared
+        .with_db(|db| henad_lib::db::set_auto_accept(db, &a_id, true))
+        .expect("database")
+        .expect("auto accept");
+
     (prompt_a.code, prompt_b.code)
 }
