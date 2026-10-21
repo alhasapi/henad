@@ -14,12 +14,13 @@ Milestone 1 is implemented end to end:
 - **Pairing** — first contact exchanges real ed25519 identities over SSH; both screens derive the same 8-digit code from both host keys, both client keys, and a nonce from each side. Confirming pins the peer's keys.
 - **Transfer** — a single regular file is streamed over a dedicated SSH channel with blake3 verification on arrival, saved to `Downloads/Henad`, and shown with live progress and speed.
 - **Folders** — a folder is sent as one session with a signed manifest (paths, sizes, digest), per-file verification, nested directories recreated under `Downloads/Henad`, and aggregate progress.
+- **Drag and drop** — dropping files or folders on a device card sends them; files go through the single-file pipeline, folders through the manifest pipeline.
 - **Resume** — an interrupted transfer keeps its partial file; "Resume" continues from the exact byte the receiver already has, and the final hash still covers the whole file.
 - **Consent** — incoming files wait for an accept/decline prompt with an optional "always accept this device"; a declined offer is recorded on both sides.
 - **Trust store and history** — SQLite at the platform data directory; paired devices reconnect silently and transfers survive restarts.
 
-Deferred to later milestones: drag-and-drop, folder resume, transfer history filtering, and macOS
-builds.
+Deferred to later milestones: folder resume, transfer history filtering, settings (friendly name,
+destination folder), and macOS builds.
 
 ## Run it
 

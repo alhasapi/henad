@@ -2,6 +2,7 @@ import type { Device } from "../lib/ipc";
 
 type Props = {
   devices: Device[];
+  dragActive: boolean;
   onPair: (device: Device) => void;
   onSend: (device: Device) => void;
   onSendFolder: (device: Device) => void;
@@ -11,6 +12,7 @@ type Props = {
 
 export function DeviceList({
   devices,
+  dragActive,
   onPair,
   onSend,
   onSendFolder,
@@ -31,7 +33,14 @@ export function DeviceList({
       {devices.map((device) => {
         const busy = busyDevice === device.id;
         return (
-          <article className="device" key={device.id}>
+          <article
+            className={dragActive ? "device drop-target" : "device"}
+            data-device-id={device.id}
+            key={device.id}
+          >
+            {dragActive && device.trusted && device.state.startsWith("online") ? (
+              <span className="drop-hint">Drop to send</span>
+            ) : null}
             <div className="device-main">
               <strong>{device.name}</strong>
               <small>

@@ -44,6 +44,10 @@ real network.
 - [ ] Send the same folder twice: the second copy lands in `folder (1)` rather than merging or
       overwriting.
 - [ ] Send a folder containing a symlink: the symlink is skipped and the rest arrives intact.
+- [ ] Drag a file from the desktop onto a paired, online device card: it is sent, and the card
+      highlights as a drop target while dragging.
+- [ ] Drag a folder onto a card: it is transferred as a folder session.
+- [ ] Drop onto the window background (not on a device): Henad explains that you must drop on a device.
 - [ ] Sending a second file with the same name produces `name (1).ext` rather than overwriting.
 - [ ] Cancel mid-transfer: both machines show `cancelled` and no `.henad-part` file remains.
 - [ ] Unplug the network mid-transfer: the sender shows `failed`, the receiver does not finalize the

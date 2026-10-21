@@ -27,6 +27,12 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 #[derive(Serialize)]
+pub struct Queued {
+    pub id: String,
+    pub kind: String,
+}
+
+#[derive(Serialize)]
 pub struct AppStatus {
     pub discovery_error: Option<String>,
     pub port: u16,
@@ -100,6 +106,20 @@ async fn send_file(
     path: String,
 ) -> Result<String, String> {
     transfer::queue(state.inner(), &device_id, &path)
+}
+
+/// Send whatever the user dropped: a regular file or a whole folder.
+#[tauri::command]
+async fn send_path(
+    state: State<'_, Arc<Shared>>,
+    device_id: String,
+    path: String,
+) -> Result<Queued, String> {
+    let (id, kind) = transfer::queue_path(state.inner(), &device_id, &path)?;
+    Ok(Queued {
+        id,
+        kind: kind.as_str().to_owned(),
+    })
 }
 
 #[tauri::command]
@@ -245,6 +265,7 @@ pub fn run() {
             unpair_device,
             send_file,
             send_folder,
+            send_path,
             respond_transfer,
             resume_transfer,
             cancel_transfer

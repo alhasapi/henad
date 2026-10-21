@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { DeviceList } from "./components/DeviceList";
 import { IncomingTransferDialog } from "./components/IncomingTransferDialog";
 import { PairingDialog } from "./components/PairingDialog";
@@ -29,6 +30,7 @@ export default function App() {
   const [offer, setOffer] = useState<IncomingTransfer | null>(null);
   const [message, setMessage] = useState("Looking for nearby devices…");
   const [busyDevice, setBusyDevice] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -107,6 +109,60 @@ export default function App() {
       unlisteners.forEach((unlisten) => unlisten());
     };
   }, []);
+
+  // Native drag-and-drop: the OS reports a drop position, so hit-test the card under it.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        const payload = event.payload;
+        if (payload.type === "over") {
+          setDragActive(true);
+        } else if (payload.type === "leave") {
+          setDragActive(false);
+        } else if (payload.type === "drop") {
+          setDragActive(false);
+          const scale = window.devicePixelRatio || 1;
+          const element = document
+            .elementFromPoint(payload.position.x / scale, payload.position.y / scale)
+            ?.closest("[data-device-id]");
+          const deviceId = element?.getAttribute("data-device-id") ?? null;
+          const target = devices.find((device) => device.id === deviceId);
+          if (!target) {
+            setMessage("Drop files or folders onto a device to send them.");
+            return;
+          }
+          if (!target.trusted || !target.state.startsWith("online")) {
+            setMessage(`Pair ${target.name} before sending to it.`);
+            return;
+          }
+          void (async () => {
+            for (const path of payload.paths) {
+              try {
+                const queued = await api.sendPath(target.id, path);
+                setMessage(
+                  queued.kind === "folder"
+                    ? `Sending folder to ${target.name}…`
+                    : `Sending ${path.split(/[\\/]/).pop() ?? "file"} to ${target.name}…`,
+                );
+              } catch (error) {
+                setMessage(String(error));
+              }
+            }
+          })();
+        }
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch((error) => setMessage(String(error)));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [devices]);
 
   const pair = useCallback(async (device: Device) => {
     setBusyDevice(device.id);
@@ -243,6 +299,7 @@ export default function App() {
         <h2>Nearby devices</h2>
         <DeviceList
           devices={devices}
+          dragActive={dragActive}
           onPair={pair}
           onSend={send}
           onSendFolder={sendFolder}

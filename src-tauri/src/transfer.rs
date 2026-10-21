@@ -55,6 +55,36 @@ pub(crate) fn reject_link(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// What a dropped path turned out to be.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    File,
+    Folder,
+}
+
+impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::File => "file",
+            Kind::Folder => "folder",
+        }
+    }
+}
+
+/// Dispatch a user-selected path to the file or folder pipeline.
+pub fn queue_path(
+    shared: &Arc<Shared>,
+    device_id: &str,
+    path: &str,
+) -> Result<(String, Kind), String> {
+    let meta = std::fs::metadata(path).map_err(|_| "That item is no longer available.")?;
+    if meta.is_dir() {
+        Ok((crate::folder::queue(shared, device_id, path)?, Kind::Folder))
+    } else {
+        Ok((queue(shared, device_id, path)?, Kind::File))
+    }
+}
+
 /// Validate an outgoing file and queue it. The actual transfer runs in the background.
 pub fn queue(shared: &Arc<Shared>, device_id: &str, path: &str) -> Result<String, String> {
     let path = PathBuf::from(path);

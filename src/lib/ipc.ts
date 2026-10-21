@@ -59,6 +59,11 @@ export type PairingResult = {
   error: string | null;
 };
 
+export type Queued = {
+  id: string;
+  kind: "file" | "folder";
+};
+
 export type IncomingTransfer = {
   transfer_id: string;
   device_id: string;
@@ -100,6 +105,8 @@ export const api = {
     invoke<string>("send_file", { deviceId, path }),
   sendFolder: (deviceId: string, path: string) =>
     invoke<string>("send_folder", { deviceId, path }),
+  sendPath: (deviceId: string, path: string) =>
+    invoke<Queued>("send_path", { deviceId, path }),
   respondTransfer: (transferId: string, accepted: boolean, remember: boolean) =>
     invoke<void>("respond_transfer", { transferId, accepted, remember }),
   resumeTransfer: (transferId: string) =>

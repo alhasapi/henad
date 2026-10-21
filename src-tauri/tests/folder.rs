@@ -190,3 +190,62 @@ async fn a_file_path_is_not_accepted_as_a_folder() {
     .await;
     assert!(delivered, "single-file path still works");
 }
+
+#[tokio::test]
+async fn queue_path_routes_files_and_folders_to_the_right_pipeline() {
+    let alpha = endpoint("dev-alpha", "Henad on alpha").await;
+    let beta = endpoint("dev-beta", "Henad on beta").await;
+    pair(&alpha, &beta).await;
+
+    let file = alpha.dir.join("dropped.txt");
+    fs::write(&file, b"dropped file").unwrap();
+    let (file_id, kind) = transfer::queue_path(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        file.to_str().unwrap(),
+    )
+    .expect("dropping a file should queue it");
+    assert_eq!(kind, transfer::Kind::File);
+
+    let folder = alpha.dir.join("dropped-folder");
+    fs::create_dir_all(folder.join("inner")).unwrap();
+    fs::write(folder.join("inner/a.txt"), b"nested").unwrap();
+    let (folder_id, kind) = transfer::queue_path(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        folder.to_str().unwrap(),
+    )
+    .expect("dropping a folder should queue it");
+    assert_eq!(kind, transfer::Kind::Folder);
+
+    let both_done = wait_until(
+        || {
+            let rows = alpha.shared.transfers();
+            [file_id.clone(), folder_id.clone()].iter().all(|id| {
+                rows.iter()
+                    .any(|row| row.id == *id && row.state == "complete")
+            })
+        },
+        Duration::from_secs(30),
+    )
+    .await;
+    assert!(
+        both_done,
+        "both dropped items should complete: {:?}",
+        alpha.shared.transfers()
+    );
+
+    assert_eq!(
+        fs::read(beta.shared.downloads_dir().join("dropped.txt")).unwrap(),
+        b"dropped file"
+    );
+    assert_eq!(
+        fs::read(
+            beta.shared
+                .downloads_dir()
+                .join("dropped-folder/inner/a.txt")
+        )
+        .unwrap(),
+        b"nested"
+    );
+}

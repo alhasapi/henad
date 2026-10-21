@@ -103,6 +103,19 @@ button:disabled {
   color: #7f9187;
   background: #eef3ef;
 }
+.device.drop-target {
+  border-color: #9fd3b4;
+  box-shadow: 0 0 0 2px #d7ece0 inset;
+}
+.drop-hint {
+  font-size: 12px;
+  font-weight: 700;
+  color: #167343;
+  background: #e6f2eb;
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
 .device-actions {
   display: flex;
   flex-shrink: 0;
