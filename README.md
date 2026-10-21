@@ -51,6 +51,10 @@ integration tests.
 See [`docs/protocol.md`](docs/protocol.md) for the wire format and [`docs/verification.md`](docs/verification.md)
 for the two-machine acceptance checklist.
 
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
 ## Security boundary
 
 The UI never treats discovery metadata as trust:
