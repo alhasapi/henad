@@ -129,17 +129,33 @@ async fn resuming_without_a_partial_file_explains_the_restart() {
         source.to_str().unwrap(),
     )
     .expect("the file should be queued");
-    let _ = wait_until(
+    let settled = wait_until(
         || {
-            alpha
-                .shared
-                .transfers()
-                .iter()
-                .any(|t| t.id == transfer_id && t.state == "complete")
+            alpha.shared.transfers().iter().any(|t| {
+                t.id == transfer_id
+                    && matches!(t.state.as_str(), "complete" | "failed" | "cancelled")
+            })
         },
         Duration::from_secs(30),
     )
     .await;
+    assert!(
+        settled,
+        "the transfer never settled: {:?}",
+        alpha.shared.transfers()
+    );
+
+    let row = alpha
+        .shared
+        .transfers()
+        .into_iter()
+        .find(|t| t.id == transfer_id)
+        .expect("sender row");
+    assert_eq!(
+        row.state, "complete",
+        "expected a clean transfer before probing resume, got {:?}",
+        row.error
+    );
 
     // A completed transfer is not resumable, and the receiver has already renamed the file.
     let error = transfer::resume(&alpha.shared, &transfer_id).unwrap_err();

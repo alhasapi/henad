@@ -439,7 +439,7 @@ async fn connect_with_retry(
 ) -> Result<net::Peer, NetError> {
     let attempt = net::connect(address, port, &shared.identity, Some(peer.host_key.clone())).await;
     match attempt {
-        Err(NetError::Protocol(_)) | Err(NetError::Unreachable) => {
+        Err(NetError::Protocol(_)) | Err(NetError::Unreachable) | Err(NetError::Timeout) => {
             tokio::time::sleep(Duration::from_millis(400)).await;
             net::connect(address, port, &shared.identity, Some(peer.host_key.clone())).await
         }
