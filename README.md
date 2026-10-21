@@ -42,9 +42,9 @@ integration tests.
 ./scripts/check.sh
 ```
 
-The same checks run in GitHub Actions on every push and pull request (Linux: format, clippy,
-tests, frontend build; Windows: build and tests). Pushes to `main` additionally build the `deb`
-and AppImage bundles and upload them as workflow artifacts.
+CI is local: nothing runs on push. The [`CI` workflow](.github/workflows/ci.yml) is manual-only —
+start it from the Actions tab when you want the same checks on a Linux runner, the tests on a
+Windows runner, and `deb`/AppImage bundles uploaded as artifacts.
 
 ## How it works
 

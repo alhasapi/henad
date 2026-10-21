@@ -1,9 +1,8 @@
 name: CI
 
+# Manual only: the day-to-day gate is scripts/check.sh. Run this from the Actions tab
+# when you want Linux + Windows runners and the release bundles verified.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -84,9 +83,6 @@ jobs:
 
   bundle:
     name: Linux — deb and AppImage bundles
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
