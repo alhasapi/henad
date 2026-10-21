@@ -131,13 +131,23 @@ pub async fn connect(
         nodelay: true,
         ..Default::default()
     });
-    let mut handle = timeout(
+    let mut handle = match timeout(
         CONNECT_TIMEOUT,
         client::connect(config, (address, port), handler),
     )
     .await
-    .map_err(|_| NetError::Unreachable)?
-    .map_err(|_| NetError::Unreachable)?;
+    {
+        Err(_) => return Err(NetError::Unreachable),
+        Ok(Err(error)) => {
+            if record.mismatch.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(NetError::KeyChanged);
+            }
+            // A refused or reset connection is the common LAN case; surface the detail
+            // so the UI can say something better than "unreachable".
+            return Err(NetError::Protocol(format!("connection failed: {error}")));
+        }
+        Ok(Ok(handle)) => handle,
+    };
 
     if record.mismatch.load(std::sync::atomic::Ordering::SeqCst) {
         return Err(NetError::KeyChanged);

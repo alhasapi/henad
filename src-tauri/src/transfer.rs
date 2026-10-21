@@ -82,6 +82,24 @@ pub fn queue(shared: &Arc<Shared>, device_id: &str, path: &str) -> Result<String
     Ok(transfer_id)
 }
 
+/// A single retry absorbs transient LAN and firewall hiccups without hiding real failures:
+/// pinning errors (`key_changed`) and authentication failures are never retried.
+async fn connect_with_retry(
+    address: &str,
+    port: u16,
+    shared: &Shared,
+    peer: &TrustedPeer,
+) -> Result<net::Peer, NetError> {
+    let attempt = net::connect(address, port, &shared.identity, Some(peer.host_key.clone())).await;
+    match attempt {
+        Err(NetError::Protocol(_)) | Err(NetError::Unreachable) => {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            net::connect(address, port, &shared.identity, Some(peer.host_key.clone())).await
+        }
+        other => other,
+    }
+}
+
 async fn send(
     shared: Arc<Shared>,
     peer: TrustedPeer,
@@ -93,13 +111,8 @@ async fn send(
     let discovered = shared
         .discovered_peer(&peer.id)
         .ok_or(NetError::Unreachable)?;
-    let connection = net::connect(
-        &discovered.address,
-        discovered.port,
-        &shared.identity,
-        Some(peer.host_key.clone()),
-    )
-    .await?;
+    let connection =
+        connect_with_retry(&discovered.address, discovered.port, &shared, &peer).await?;
     let (mut control_reader, control_writer) = net::open_session(&connection.handle).await?;
     let transfer_uuid = Uuid::parse_str(&transfer_id).unwrap_or_default();
 
