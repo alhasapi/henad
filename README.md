@@ -1,18 +1,62 @@
 # Henad
 
-Henad is a local-network desktop file-transfer app for Windows and Linux. This initial prototype provides the Tauri desktop shell, durable local records, pairing-code primitives, and a deliberately constrained single-file send queue.
+Henad is a local-network desktop file-transfer app for Windows and Linux: zero-configuration
+discovery, a one-time numeric pairing code, and SSH-authenticated single-file transfers with live
+progress. No internet connection, router, or account is required.
+
+## Status
+
+Milestone 1 is implemented end to end:
+
+- **Discovery** — every instance advertises `_henad._tcp.local.` over mDNS and lists nearby devices by name.
+- **Pairing** — first contact exchanges real ed25519 identities over SSH; both screens derive the same 8-digit code from both host keys, both client keys, and a nonce from each side. Confirming pins the peer's keys.
+- **Transfer** — a single regular file is streamed over a dedicated SSH channel with blake3 verification on arrival, saved to `Downloads/Henad`, and shown with live progress and speed.
+- **Trust store and history** — SQLite at the platform data directory; paired devices reconnect silently and transfers survive restarts.
+
+Deferred to later milestones: resume of interrupted transfers, folders and drag-and-drop, transfer
+history filtering, macOS, and installer packaging (the bundle still has no icons).
 
 ## Run it
 
-Prerequisites: current Rust, Node 20+, and the platform dependencies required by [Tauri 2](https://v2.tauri.app/start/prerequisites/).
+Prerequisites: current Rust, Node 20+, and the platform dependencies required by
+[Tauri 2](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-Use `npm run build` for the web UI check and `cd src-tauri && cargo test` for protocol/safety tests.
+## Checks
+
+`scripts/check.sh` is the local CI: frontend typecheck and build, `cargo fmt --check`,
+`cargo clippy --all-targets -- -D warnings`, and all Rust tests including the loopback
+integration tests.
+
+```bash
+./scripts/check.sh
+```
+
+## How it works
+
+| Layer | Choice |
+| --- | --- |
+| Shell | Tauri 2 (Rust backend, React front end) |
+| Discovery | `mdns-sd`, advertising `_henad._tcp.local.` with the SSH port in the SRV record |
+| Transport | `russh` (pure Rust SSH), ed25519 host and client keys generated on first launch |
+| Pairing | SSH with trust-on-first-use host key + a 8-digit code derived from a canonical transcript |
+| Transfer | Dedicated SSH `session` channels; length-prefixed JSON control frames plus a raw byte stream |
+| Integrity | blake3 of the whole file, compared by the receiver; failures never finalize the file |
+| Storage | SQLite (`user_version` 2) in the platform data dir; keys in `identity_host` / `identity_client` |
+
+See [`docs/protocol.md`](docs/protocol.md) for the wire format and [`docs/verification.md`](docs/verification.md)
+for the two-machine acceptance checklist.
 
 ## Security boundary
 
-The UI never treats discovery metadata as trust. A device must be paired before queuing a file; the pairing code uses a canonical, versioned transcript. The control protocol explicitly versions and identifies every pairing, offer, decision, progress, cancellation, and resume message. Remote paths are rejected unless they are safe relative paths, including Windows filename compatibility checks. The next implementation step is wiring mDNS discovery and the authenticated `russh` control/SFTP transport to these primitives; no shell or unrestricted SFTP endpoint is exposed by this scaffold.
+The UI never treats discovery metadata as trust:
+
+- Discovery TXT records are hints. A peer's advertised fingerprint must match the host key it presents, and once paired the host key must match the pinned key exactly — otherwise the transfer is refused with a "key changed" error.
+- A device must be paired before it can send a file; the receiving side checks the authenticated SSH client key against its trust store, not the claimed device name.
+- Pairing signatures are `sshsig` signatures over the transcript hash in a dedicated namespace, verified against the exact client key that was bound into the code.
+- Remote filenames must be a single safe relative component: no traversal, no absolute paths, no Windows-incompatible characters or trailing dots/spaces.
+- The SSH server accepts only `session` channels, never a shell or `exec`, caps concurrent connections, and limits control frames to 64 KiB. Private keys are never logged.
