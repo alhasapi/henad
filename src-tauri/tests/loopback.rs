@@ -354,3 +354,39 @@ async fn accepting_with_remember_skips_later_prompts() {
         "only the first transfer should have prompted"
     );
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn linked_sources_are_refused_instead_of_followed() {
+    use std::os::unix::fs::symlink;
+
+    let alpha = endpoint("dev-alpha", "Henad on alpha").await;
+    let beta = endpoint("dev-beta", "Henad on beta").await;
+    pair(&alpha, &beta).await;
+
+    let target = alpha.dir.join("real.txt");
+    fs::write(&target, b"real payload").unwrap();
+    let link = alpha.dir.join("link.txt");
+    symlink(&target, &link).unwrap();
+
+    let error = transfer::queue(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        link.to_str().unwrap(),
+    )
+    .unwrap_err();
+    assert!(error.contains("link"), "unexpected error: {error}");
+
+    let error = henad_lib::folder::queue(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        link.to_str().unwrap(),
+    )
+    .unwrap_err();
+    assert!(error.contains("link"), "unexpected error: {error}");
+
+    assert!(
+        alpha.shared.transfers().is_empty(),
+        "refused sources must not create history rows"
+    );
+}

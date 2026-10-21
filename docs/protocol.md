@@ -158,7 +158,8 @@ the manifest; the consent prompt expires after 60 s like a single file.
 
 ## Limits
 
-- 8 concurrent inbound connections, 3 authentication attempts, 15 s handshake timeout.
+- 8 concurrent inbound connections with at most 4 from any single address, 3 authentication attempts,
+  15 s handshake timeout.
 - Pairing prompts expire after 120 s; incoming file offers after 60 s.
 - Accept/decline is a local policy: "always accept" is stored per device in the trust store and is
   never negotiated on the wire.

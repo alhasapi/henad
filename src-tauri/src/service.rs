@@ -8,12 +8,11 @@ use crate::{
     transfer,
 };
 use russh::{keys::ssh_key, server, Channel};
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
-pub const MAX_CONNECTIONS: usize = 8;
-
-/// Accept loop. Each connection gets its own handler and is capped by `MAX_CONNECTIONS`.
+/// Accept loop. Each connection gets its own handler; `Shared::open_connection` enforces the
+/// global and per-address caps.
 pub async fn serve(shared: Arc<Shared>, listener: TcpListener) {
     loop {
         let (socket, peer) = match listener.accept().await {
@@ -23,8 +22,7 @@ pub async fn serve(shared: Arc<Shared>, listener: TcpListener) {
                 continue;
             }
         };
-        if shared.connections.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
-            shared.connections.fetch_sub(1, Ordering::SeqCst);
+        if !shared.open_connection(Some(peer)) {
             drop(socket);
             continue;
         }
@@ -40,7 +38,7 @@ pub async fn serve(shared: Arc<Shared>, listener: TcpListener) {
             if let Ok(session) = server::run_stream(config, socket, handler).await {
                 let _ = session.await;
             }
-            shared.connections.fetch_sub(1, Ordering::SeqCst);
+            shared.close_connection(Some(peer));
         });
     }
 }

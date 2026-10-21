@@ -45,9 +45,20 @@ const DATA_TIMEOUT: Duration = Duration::from_secs(60);
 const CONTROL_IDLE: Duration = Duration::from_secs(60 * 60);
 pub(crate) const CONSENT_WINDOW: Duration = Duration::from_secs(60);
 
+/// Reject links rather than silently following them: the user picks what gets sent.
+pub(crate) fn reject_link(path: &Path) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|_| "The selected item is no longer available".to_string())?;
+    if meta.file_type().is_symlink() {
+        return Err("That is a link. Choose the file or folder it points to instead.".to_string());
+    }
+    Ok(())
+}
+
 /// Validate an outgoing file and queue it. The actual transfer runs in the background.
 pub fn queue(shared: &Arc<Shared>, device_id: &str, path: &str) -> Result<String, String> {
     let path = PathBuf::from(path);
+    reject_link(&path)?;
     let meta = std::fs::metadata(&path)
         .map_err(|_| "The selected file is no longer available".to_string())?;
     if !meta.is_file() {
@@ -104,6 +115,7 @@ pub fn resume(shared: &Arc<Shared>, transfer_id: &str) -> Result<(), String> {
         return Err("Only interrupted transfers can be resumed.".into());
     }
     let path = PathBuf::from(&row.source_path);
+    reject_link(&path)?;
     let meta = std::fs::metadata(&path).map_err(|_| "The original file is no longer available.")?;
     if !meta.is_file() || meta.len() != row.bytes_total {
         return Err("The file changed since the transfer started. Send it again.".into());
@@ -156,6 +168,7 @@ async fn send(
     name: String,
     total: u64,
 ) -> Result<(), NetError> {
+    reject_link(&path).map_err(NetError::Protocol)?;
     let discovered = shared
         .discovered_peer(&peer.id)
         .ok_or(NetError::Unreachable)?;

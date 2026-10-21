@@ -71,7 +71,8 @@ The UI never treats discovery metadata as trust:
 - A device must be paired before it can send a file; the receiving side checks the authenticated SSH client key against its trust store, not the claimed device name.
 - Pairing signatures are `sshsig` signatures over the transcript hash in a dedicated namespace, verified against the exact client key that was bound into the code.
 - Remote filenames must be a single safe relative component: no traversal, no absolute paths, no Windows-incompatible characters or trailing dots/spaces.
-- The SSH server accepts only `session` channels, never a shell or `exec`, caps concurrent connections, and limits control frames to 64 KiB. Private keys are never logged.
+- The SSH server accepts only `session` channels, never a shell or `exec`, caps concurrent connections (8 overall, 4 per address) so one host cannot exhaust it, and limits control frames to 64 KiB. Private keys are never logged.
+- Sources are never followed through links: a symlinked file or folder is refused with an explanation, and symlinks inside a sent folder are skipped.
 
 ## License
 

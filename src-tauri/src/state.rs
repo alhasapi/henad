@@ -207,6 +207,8 @@ pub struct Shared {
     pub server_config: Arc<russh::server::Config>,
     pub port: AtomicU16,
     pub connections: AtomicUsize,
+    /// Live inbound connections per peer address, so one host cannot exhaust the server.
+    pub connections_by_ip: Mutex<HashMap<std::net::IpAddr, usize>>,
     pub app_dir: PathBuf,
     pub discovery_error: Mutex<Option<String>>,
     /// Peers supplied out-of-band (tests, or a future manual "connect by address" flow).
@@ -243,10 +245,52 @@ impl Shared {
             server_config,
             port: AtomicU16::new(0),
             connections: AtomicUsize::new(0),
+            connections_by_ip: Mutex::new(HashMap::new()),
             app_dir,
             discovery_error: Mutex::new(None),
             static_peers: Mutex::new(HashMap::new()),
             downloads_override: Mutex::new(None),
+        }
+    }
+
+    /// Reserve a connection slot. Returns false when the global or per-address cap is hit.
+    pub fn open_connection(&self, peer: Option<std::net::SocketAddr>) -> bool {
+        const GLOBAL_CAP: usize = 8;
+        const PER_ADDRESS_CAP: usize = 4;
+
+        if self.connections.fetch_add(1, Ordering::SeqCst) >= GLOBAL_CAP {
+            self.connections.fetch_sub(1, Ordering::SeqCst);
+            return false;
+        }
+        let Some(ip) = peer.map(|address| address.ip()) else {
+            return true;
+        };
+        match self.connections_by_ip.lock() {
+            Ok(mut counts) => {
+                let entry = counts.entry(ip).or_insert(0);
+                if *entry >= PER_ADDRESS_CAP {
+                    self.connections.fetch_sub(1, Ordering::SeqCst);
+                    return false;
+                }
+                *entry += 1;
+                true
+            }
+            Err(_) => true,
+        }
+    }
+
+    pub fn close_connection(&self, peer: Option<std::net::SocketAddr>) {
+        self.connections.fetch_sub(1, Ordering::SeqCst);
+        let Some(ip) = peer.map(|address| address.ip()) else {
+            return;
+        };
+        if let Ok(mut counts) = self.connections_by_ip.lock() {
+            if let Some(count) = counts.get_mut(&ip) {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    counts.remove(&ip);
+                }
+            }
         }
     }
 
@@ -652,5 +696,60 @@ impl Shared {
 
     pub fn net_timeouts(&self) -> (Duration, Duration) {
         (net::HANDSHAKE_TIMEOUT, net::PAIRING_WINDOW)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+
+    fn shared() -> Shared {
+        let dir = std::env::temp_dir().join(format!("henad-state-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::open(&dir.join("state.sqlite3")).unwrap();
+        let identity =
+            crate::identity::Identity::load_or_create(&dir, "dev".into(), "test".into()).unwrap();
+        Shared::new(db, identity, Arc::new(NoEvents), dir)
+    }
+
+    fn addr(ip: &str, port: u16) -> Option<SocketAddr> {
+        Some(format!("{ip}:{port}").parse().unwrap())
+    }
+
+    #[test]
+    fn per_address_connection_cap_is_enforced_and_released() {
+        let shared = shared();
+        for _ in 0..4 {
+            assert!(shared.open_connection(addr("10.0.0.1", 1000)));
+        }
+        assert!(
+            !shared.open_connection(addr("10.0.0.1", 1001)),
+            "a fifth connection from the same host must be refused"
+        );
+        assert!(
+            shared.open_connection(addr("10.0.0.2", 1002)),
+            "other hosts are unaffected"
+        );
+        shared.close_connection(addr("10.0.0.1", 1000));
+        assert!(shared.open_connection(addr("10.0.0.1", 1003)));
+        for port in 1000..1004 {
+            shared.close_connection(addr("10.0.0.1", port));
+        }
+        shared.close_connection(addr("10.0.0.2", 1002));
+        assert_eq!(shared.connections.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn global_connection_cap_is_enforced() {
+        let shared = shared();
+        for index in 0..8u16 {
+            let ip = format!("10.1.{index}.1");
+            assert!(shared.open_connection(addr(&ip, 2000 + index)));
+        }
+        assert!(
+            !shared.open_connection(addr("10.1.99.1", 3000)),
+            "the ninth concurrent connection must be refused"
+        );
     }
 }

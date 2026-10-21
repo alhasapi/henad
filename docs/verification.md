@@ -60,6 +60,7 @@ real network.
 ## Cross-platform
 
 - [ ] Linux → Windows and Windows → Linux both work with the same steps.
+- [ ] Pick a symlink to a file or folder where links are available: Henad refuses it and explains why.
 - [ ] A filename containing characters invalid on Windows (`: * ? " < > |`) is rejected by the
       receiver instead of writing a broken path.
 - [ ] No console window, crash dialog, or silent exit occurs on either platform.

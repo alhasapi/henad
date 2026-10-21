@@ -40,6 +40,7 @@ const CONTROL_IDLE: Duration = Duration::from_secs(60 * 60);
 /// Validate and queue a folder. The transfer itself runs in the background.
 pub fn queue(shared: &Arc<Shared>, device_id: &str, path: &str) -> Result<String, String> {
     let root = PathBuf::from(path);
+    crate::transfer::reject_link(&root)?;
     if !root.is_dir() {
         return Err("Choose a folder to send.".into());
     }
