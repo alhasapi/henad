@@ -1,5 +1,7 @@
 # Henad
 
+[![CI](https://github.com/alhasapi/henad/actions/workflows/ci.yml/badge.svg)](https://github.com/alhasapi/henad/actions/workflows/ci.yml)
+
 Henad is a local-network desktop file-transfer app for Windows and Linux: zero-configuration
 discovery, a one-time numeric pairing code, and SSH-authenticated single-file transfers with live
 progress. No internet connection, router, or account is required.
@@ -36,6 +38,10 @@ integration tests.
 ./scripts/check.sh
 ```
 
+The same checks run in GitHub Actions on every push and pull request (Linux: format, clippy,
+tests, frontend build; Windows: build and tests). Pushes to `main` additionally build the `deb`
+and AppImage bundles and upload them as workflow artifacts.
+
 ## How it works
 
 | Layer | Choice |
@@ -51,9 +57,8 @@ integration tests.
 See [`docs/protocol.md`](docs/protocol.md) for the wire format and [`docs/verification.md`](docs/verification.md)
 for the two-machine acceptance checklist.
 
-## License
-
-MIT — see [`LICENSE`](LICENSE).
+App icons live in `src-tauri/icons/` and are regenerated from `icon-1024.png` with
+`npm run tauri icon src-tauri/icons/icon-1024.png`.
 
 ## Security boundary
 
@@ -64,3 +69,7 @@ The UI never treats discovery metadata as trust:
 - Pairing signatures are `sshsig` signatures over the transcript hash in a dedicated namespace, verified against the exact client key that was bound into the code.
 - Remote filenames must be a single safe relative component: no traversal, no absolute paths, no Windows-incompatible characters or trailing dots/spaces.
 - The SSH server accepts only `session` channels, never a shell or `exec`, caps concurrent connections, and limits control frames to 64 KiB. Private keys are never logged.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
