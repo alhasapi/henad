@@ -163,6 +163,15 @@ export default function App() {
     await api.cancelTransfer(transfer.id).catch((error) => setMessage(String(error)));
   }, []);
 
+  const resumeTransfer = useCallback(async (transfer: Transfer) => {
+    try {
+      await api.resumeTransfer(transfer.id);
+      setMessage(`Resuming ${transfer.file_name}…`);
+    } catch (error) {
+      setMessage(String(error));
+    }
+  }, []);
+
   return (
     <main>
       <header>
@@ -195,7 +204,11 @@ export default function App() {
 
       <section>
         <h2>Transfers</h2>
-        <TransferList transfers={transfers} onCancel={cancelTransfer} />
+        <TransferList
+          transfers={transfers}
+          onCancel={cancelTransfer}
+          onResume={resumeTransfer}
+        />
       </section>
 
       <footer className="identity">

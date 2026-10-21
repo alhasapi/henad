@@ -286,6 +286,32 @@ pub fn update_transfer(
     Ok(())
 }
 
+/// Fetch a single transfer row by id.
+pub fn transfer(db: &Connection, id: &str) -> Option<TransferRow> {
+    db.query_row(
+        "SELECT id,device_id,device_name,file_name,source_path,bytes_done,bytes_total,state,error,created_at
+         FROM transfers WHERE id=?",
+        [id],
+        |r| {
+            Ok(TransferRow {
+                id: r.get(0)?,
+                device_id: r.get(1)?,
+                device_name: r.get(2)?,
+                file_name: r.get(3)?,
+                source_path: r.get(4)?,
+                bytes_done: r.get::<_, i64>(5)? as u64,
+                bytes_total: r.get::<_, i64>(6)? as u64,
+                state: r.get(7)?,
+                error: r.get(8)?,
+                created_at: r.get(9)?,
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
 pub fn list_transfers(db: &Connection, limit: usize) -> Vec<TransferRow> {
     let mut stmt = match db.prepare(
         "SELECT id,device_id,device_name,file_name,source_path,bytes_done,bytes_total,state,error,created_at

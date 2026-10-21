@@ -38,6 +38,10 @@ real network.
       file, and no partial file is presented as complete.
 - [ ] Restart both apps: the device is still listed as paired and a new transfer works without any
       code prompt.
+- [ ] Interrupt a large transfer (unplug the network, then reconnect), press **Resume** on the sender:
+      the transfer continues from the partial file and the received file's checksum matches.
+- [ ] Resume after the receiver deleted the `.henad-part` file: the sender explains that the file must
+      be sent again, and nothing is overwritten.
 - [ ] Delete `identity_host` on one machine and try to transfer: the other machine refuses with a
       "key changed" error and requires an explicit unpair.
 

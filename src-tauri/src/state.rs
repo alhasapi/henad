@@ -40,6 +40,8 @@ pub struct Transfer {
     pub speed_bps: u64,
     pub state: String,
     pub error: Option<String>,
+    /// True for transfers this device sent that can be resumed (the source file is known).
+    pub can_resume: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -286,6 +288,8 @@ impl Shared {
         rows.into_iter()
             .map(|row| {
                 let runtime = live.as_ref().and_then(|l| l.get(&row.id));
+                let can_resume = !row.source_path.is_empty()
+                    && matches!(row.state.as_str(), "failed" | "cancelled");
                 Transfer {
                     id: row.id,
                     device_name: row.device_name,
@@ -295,6 +299,7 @@ impl Shared {
                     speed_bps: runtime.map(|r| r.speed_bps).unwrap_or(0),
                     state: row.state,
                     error: row.error,
+                    can_resume,
                 }
             })
             .collect()
@@ -378,7 +383,7 @@ impl Shared {
 
     pub fn start_live(&self, transfer_id: &str, total: u64) -> Arc<AtomicBool> {
         let cancel = Arc::new(AtomicBool::new(false));
-        self.start_live_with(transfer_id, total, cancel)
+        self.start_live_with(transfer_id, total, cancel, 0)
     }
 
     /// Register live progress for a transfer whose cancellation flag is owned elsewhere.
@@ -387,13 +392,14 @@ impl Shared {
         transfer_id: &str,
         total: u64,
         cancel: Arc<AtomicBool>,
+        done: u64,
     ) -> Arc<AtomicBool> {
         if let Ok(mut live) = self.live.lock() {
             let now = Instant::now();
             live.insert(
                 transfer_id.to_owned(),
                 LiveTransfer {
-                    done: 0,
+                    done,
                     total,
                     speed_bps: 0,
                     cancel: cancel.clone(),

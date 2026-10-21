@@ -3,9 +3,10 @@ import { formatBytes, formatSpeed, type Transfer } from "../lib/ipc";
 type Props = {
   transfers: Transfer[];
   onCancel: (transfer: Transfer) => void;
+  onResume: (transfer: Transfer) => void;
 };
 
-export function TransferList({ transfers, onCancel }: Props) {
+export function TransferList({ transfers, onCancel, onResume }: Props) {
   if (transfers.length === 0) {
     return <div className="empty">Your transfers will appear here.</div>;
   }
@@ -37,6 +38,9 @@ export function TransferList({ transfers, onCancel }: Props) {
               <button className="secondary" onClick={() => onCancel(transfer)}>
                 Cancel
               </button>
+            ) : null}
+            {transfer.can_resume ? (
+              <button onClick={() => onResume(transfer)}>Resume</button>
             ) : null}
           </article>
         );

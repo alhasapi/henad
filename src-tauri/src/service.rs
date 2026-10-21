@@ -100,23 +100,19 @@ async fn dispatch(
         message @ ControlMessage::TransferData { .. } => {
             transfer::receive_data(shared, reader, writer, buffer, message).await
         }
-        ControlMessage::ResumeTransfer { transfer_id, .. } => {
-            // Resume lands in a later milestone; fail closed with a clear reason.
-            net::send_message(
-                &writer,
-                &ControlMessage::TransferStatus {
-                    protocol_version: crate::core::PROTOCOL_VERSION,
-                    request_id: uuid::Uuid::new_v4(),
-                    transfer_id,
-                    completed_bytes: 0,
-                    error: Some(crate::protocol::ProtocolError::new(
-                        crate::protocol::ErrorCode::TransferRejected,
-                        "resume is not supported in this version",
-                    )),
-                },
+        message @ ControlMessage::ResumeQuery { .. } => {
+            transfer::receive_resume_session(
+                shared,
+                reader,
+                writer,
+                buffer,
+                message,
+                authenticated_key,
             )
-            .await?;
-            Ok(())
+            .await
+        }
+        message @ ControlMessage::ResumeTransfer { .. } => {
+            transfer::receive_resume(shared, reader, writer, message, authenticated_key).await
         }
         other => Err(NetError::Protocol(format!(
             "unexpected first message: {}",

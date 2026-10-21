@@ -1,4 +1,4 @@
-# Henad protocol, version 2
+# Henad protocol, version 3
 
 Everything below runs inside an SSH session authenticated with ed25519 keys. There is no
 plaintext side channel: even first-contact pairing happens over SSH, with the host key held as a
@@ -28,11 +28,11 @@ is accepted, exactly `bytes` octets follow on the data channel, then framing res
 | --- | --- |
 | Pairing channel | `pair_offer`, `pair_accept`, `pair_confirm` |
 | Transfer control channel | `transfer_offer`, `transfer_decision`, `cancel_transfer`, `transfer_complete`, `transfer_status` |
+| Resume control channel | `resume_query`, `resume_state`, `resume_transfer`, then the transfer control exchange |
 | Transfer data channel | `transfer_data` frame, then raw file bytes |
 
-Each message carries `protocol_version: u16` (currently `2`) and a `request_id: Uuid`. Peers
-speaking any other version are rejected with `error_code: unsupported_version`; `resume_transfer` is
-defined but answered with `transfer_rejected` until the resume milestone.
+Each message carries `protocol_version: u16` (currently `3`) and a `request_id: Uuid`. Peers
+speaking any other version are rejected with `error_code: unsupported_version`.
 
 ## Pairing
 
@@ -98,6 +98,28 @@ A peer that proposes a different host key for an already-trusted device is refus
 
 `cancel_transfer` travels on the control channel, so it can never be confused with file bytes. Both
 sides delete the staging file and record `cancelled`.
+
+An interrupted transfer keeps `<name>.henad-part` on the receiver and a `failed` row on the sender.
+Nothing is deleted automatically, so the partial data stays available for resume.
+
+## Resume
+
+The sender re-opens a control channel for the same `transfer_id`:
+
+1. `resume_query { transfer_id }` — the receiver looks up its own row for that id, confirms the row
+   belongs to this authenticated client key, and checks `<name>.henad-part` on disk.
+2. `resume_state { transfer_id, ok, offset, total }` — `offset` is the current size of the staging
+   file. `ok` is false when there is no partial file, the file is empty, or it is already complete.
+3. If `ok` is false the sender stops and asks the user to send the file again; nothing is written.
+4. Otherwise the sender offers `resume_transfer { transfer_id, completed_bytes }`, which the receiver
+   only accepts when its staging file length equals `completed_bytes` exactly.
+5. The data channel carries the remaining `total - offset` octets. Both sides hash the existing
+   prefix (the receiver reads its staging file, the sender re-reads that range of the source) and
+   then hash the appended bytes, so `transfer_complete` still carries a blake3 of the **whole** file.
+6. Verification, rename, and `transfer_status` behave exactly as in a fresh transfer.
+
+Because the offset is authenticated by the pinned client key and the end-to-end hash covers the
+prefix, a resumed file cannot be assembled from bytes the sender did not agree to.
 
 ## Error codes
 

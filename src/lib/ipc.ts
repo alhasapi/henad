@@ -24,6 +24,8 @@ export type Transfer = {
   speed_bps: number;
   state: TransferState;
   error?: string | null;
+  /** True when this device sent the file and the partial copy can be resumed. */
+  can_resume: boolean;
 };
 
 export type IdentityInfo = {
@@ -72,6 +74,8 @@ export const api = {
   unpair: (deviceId: string) => invoke<void>("unpair_device", { deviceId }),
   sendFile: (deviceId: string, path: string) =>
     invoke<string>("send_file", { deviceId, path }),
+  resumeTransfer: (transferId: string) =>
+    invoke<void>("resume_transfer", { transferId }),
   cancelTransfer: (transferId: string) =>
     invoke<void>("cancel_transfer", { transferId }),
 };

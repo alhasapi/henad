@@ -4,7 +4,7 @@ use rand::RngCore;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 /// Control frames are small JSON messages; anything larger is a bug or an attack.
 pub const MAX_FRAME: usize = 64 * 1024;
 

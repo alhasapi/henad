@@ -102,6 +102,11 @@ async fn send_file(
 }
 
 #[tauri::command]
+async fn resume_transfer(state: State<'_, Arc<Shared>>, transfer_id: String) -> Result<(), String> {
+    transfer::resume(state.inner(), &transfer_id)
+}
+
+#[tauri::command]
 async fn cancel_transfer(state: State<'_, Arc<Shared>>, transfer_id: String) -> Result<(), String> {
     transfer::cancel(state.inner(), &transfer_id);
     Ok(())
@@ -214,6 +219,7 @@ pub fn run() {
             cancel_pairing,
             unpair_device,
             send_file,
+            resume_transfer,
             cancel_transfer
         ])
         .build(tauri::generate_context!())

@@ -112,13 +112,27 @@ pub enum ControlMessage {
         request_id: Uuid,
         transfer_id: Uuid,
     },
-    /// Reserved for a later milestone; peers answer with `TransferRejected`.
+    /// Ask the receiver how much of an interrupted transfer it already has.
+    ResumeQuery {
+        protocol_version: u16,
+        request_id: Uuid,
+        transfer_id: Uuid,
+    },
+    /// Receiver -> sender: `offset` bytes of `<name>.henad-part` are on disk.
+    ResumeState {
+        protocol_version: u16,
+        request_id: Uuid,
+        transfer_id: Uuid,
+        ok: bool,
+        offset: u64,
+        total: u64,
+    },
+    /// Resume offer: append from `completed_bytes` and verify the whole file at the end.
     ResumeTransfer {
         protocol_version: u16,
         request_id: Uuid,
         transfer_id: Uuid,
         completed_bytes: u64,
-        blake3: [u8; 32],
     },
 }
 
@@ -152,6 +166,12 @@ impl ControlMessage {
             | Self::CancelTransfer {
                 protocol_version, ..
             }
+            | Self::ResumeQuery {
+                protocol_version, ..
+            }
+            | Self::ResumeState {
+                protocol_version, ..
+            }
             | Self::ResumeTransfer {
                 protocol_version, ..
             } => *protocol_version,
@@ -169,6 +189,8 @@ impl ControlMessage {
             Self::TransferComplete { .. } => "transfer_complete",
             Self::TransferStatus { .. } => "transfer_status",
             Self::CancelTransfer { .. } => "cancel_transfer",
+            Self::ResumeQuery { .. } => "resume_query",
+            Self::ResumeState { .. } => "resume_state",
             Self::ResumeTransfer { .. } => "resume_transfer",
         }
     }
@@ -195,6 +217,8 @@ impl ControlMessage {
             | Self::TransferComplete { request_id, .. }
             | Self::TransferStatus { request_id, .. }
             | Self::CancelTransfer { request_id, .. }
+            | Self::ResumeQuery { request_id, .. }
+            | Self::ResumeState { request_id, .. }
             | Self::ResumeTransfer { request_id, .. } => *request_id,
         }
     }
@@ -265,6 +289,24 @@ mod tests {
             decode(b"{\"type\":\"nope\"}").unwrap_err().code,
             ErrorCode::Internal
         );
+    }
+
+    #[test]
+    fn resume_messages_carry_the_same_version_and_request() {
+        let id = Uuid::new_v4();
+        let message = ControlMessage::ResumeState {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: id,
+            transfer_id: Uuid::nil(),
+            ok: true,
+            offset: 1024,
+            total: 4096,
+        };
+        assert_eq!(message.version(), PROTOCOL_VERSION);
+        assert_eq!(message.request_id(), id);
+        assert_eq!(message.kind(), "resume_state");
+        let encoded = serde_json::to_vec(&message).unwrap();
+        assert_eq!(decode(&encoded).unwrap(), message);
     }
 
     #[test]
