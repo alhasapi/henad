@@ -249,3 +249,65 @@ async fn queue_path_routes_files_and_folders_to_the_right_pipeline() {
         b"nested"
     );
 }
+
+#[tokio::test]
+async fn a_declined_folder_is_not_offered_for_resume() {
+    let alpha = endpoint("dev-alpha", "Henad on alpha").await;
+    let beta = endpoint("dev-beta", "Henad on beta").await;
+    pair(&alpha, &beta).await;
+    beta.shared
+        .with_db(|db| db::set_auto_accept(db, &alpha.shared.identity.device_id, false))
+        .expect("database")
+        .expect("auto accept");
+
+    let source = alpha.dir.join("declined-folder");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("a.txt"), b"a").unwrap();
+    let session_id = folder::queue(
+        &alpha.shared,
+        &beta.shared.identity.device_id,
+        source.to_str().unwrap(),
+    )
+    .expect("folder queued");
+
+    let prompted = wait_until(
+        || !beta.events.offers.lock().unwrap().is_empty(),
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(prompted);
+    let prompt = beta.events.offers.lock().unwrap()[0].clone();
+    assert!(beta
+        .shared
+        .decide_incoming(&prompt.transfer_id, false, false));
+
+    let failed = wait_until(
+        || {
+            alpha
+                .shared
+                .transfers()
+                .iter()
+                .any(|t| t.id == session_id && t.state == "failed")
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(failed, "the sender records the declined folder");
+
+    let row = alpha
+        .shared
+        .transfers()
+        .into_iter()
+        .find(|t| t.id == session_id)
+        .expect("sender row");
+    assert!(
+        !row.can_resume,
+        "folder sessions must not advertise a resume action"
+    );
+
+    let error = transfer::resume(&alpha.shared, &session_id).unwrap_err();
+    assert!(
+        error.contains("Folders cannot be resumed"),
+        "unexpected error: {error}"
+    );
+}

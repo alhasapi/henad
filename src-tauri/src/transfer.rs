@@ -147,6 +147,9 @@ pub fn resume(shared: &Arc<Shared>, transfer_id: &str) -> Result<(), String> {
     let path = PathBuf::from(&row.source_path);
     reject_link(&path)?;
     let meta = std::fs::metadata(&path).map_err(|_| "The original file is no longer available.")?;
+    if meta.is_dir() {
+        return Err("Folders cannot be resumed yet. Send the folder again.".into());
+    }
     if !meta.is_file() || meta.len() != row.bytes_total {
         return Err("The file changed since the transfer started. Send it again.".into());
     }

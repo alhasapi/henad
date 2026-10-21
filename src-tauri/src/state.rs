@@ -379,8 +379,12 @@ impl Shared {
         rows.into_iter()
             .map(|row| {
                 let runtime = live.as_ref().and_then(|l| l.get(&row.id));
+                // Only single-file transfers are resumable today: folder sessions point at a directory.
                 let can_resume = !row.source_path.is_empty()
-                    && matches!(row.state.as_str(), "failed" | "cancelled");
+                    && matches!(row.state.as_str(), "failed" | "cancelled")
+                    && std::fs::metadata(&row.source_path)
+                        .map(|meta| meta.is_file())
+                        .unwrap_or(false);
                 Transfer {
                     id: row.id,
                     device_name: row.device_name,
