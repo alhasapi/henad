@@ -705,7 +705,11 @@ mod tests {
     use std::net::SocketAddr;
 
     fn shared() -> Shared {
-        let dir = std::env::temp_dir().join(format!("henad-state-{}", std::process::id()));
+        // Each instance needs its own directory: parallel tests cannot share one SQLite file.
+        use std::sync::atomic::AtomicU32;
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let unique = NEXT.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("henad-state-{}-{unique}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = crate::db::open(&dir.join("state.sqlite3")).unwrap();
         let identity =
