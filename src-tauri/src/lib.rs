@@ -2,6 +2,7 @@
 pub mod core;
 pub mod db;
 pub mod discovery;
+pub mod folder;
 pub mod identity;
 pub mod net;
 pub mod pairing;
@@ -99,6 +100,15 @@ async fn send_file(
     path: String,
 ) -> Result<String, String> {
     transfer::queue(state.inner(), &device_id, &path)
+}
+
+#[tauri::command]
+async fn send_folder(
+    state: State<'_, Arc<Shared>>,
+    device_id: String,
+    path: String,
+) -> Result<String, String> {
+    folder::queue(state.inner(), &device_id, &path)
 }
 
 #[tauri::command]
@@ -234,6 +244,7 @@ pub fn run() {
             cancel_pairing,
             unpair_device,
             send_file,
+            send_folder,
             respond_transfer,
             resume_transfer,
             cancel_transfer

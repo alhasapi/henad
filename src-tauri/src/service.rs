@@ -1,5 +1,6 @@
 //! The inbound SSH service: authenticated, pairing-only for unknown peers, no shell.
 use crate::{
+    folder,
     net::{self, NetError},
     pairing,
     protocol::ControlMessage,
@@ -99,6 +100,12 @@ async fn dispatch(
         }
         message @ ControlMessage::TransferData { .. } => {
             transfer::receive_data(shared, reader, writer, buffer, message).await
+        }
+        message @ ControlMessage::FolderOffer { .. } => {
+            folder::receive_offer(shared, reader, writer, buffer, message, authenticated_key).await
+        }
+        message @ ControlMessage::FolderData { .. } => {
+            folder::receive_data(shared, reader, writer, buffer, message).await
         }
         message @ ControlMessage::ResumeQuery { .. } => {
             transfer::receive_resume_session(

@@ -22,9 +22,13 @@ export function IncomingTransferDialog({ offer, onRespond }: Props) {
   return (
     <div className="overlay">
       <div className="dialog">
-        <h2>Incoming file</h2>
+        <h2>{offer.kind === "folder" ? "Incoming folder" : "Incoming file"}</h2>
         <p>
-          <strong>{offer.device_name}</strong> wants to send you a file.
+          <strong>{offer.device_name}</strong> wants to send you{" "}
+          {offer.kind === "folder"
+            ? `a folder with ${offer.file_count} file${offer.file_count === 1 ? "" : "s"}`
+            : "a file"}
+          .
         </p>
         <output className="file">{offer.file_name}</output>
         <p className="muted">

@@ -39,6 +39,11 @@ real network.
       offer expired.
 - [ ] Send a 1 GB file; the progress bar advances, speed is plausible, and the received file's
       checksum matches (`sha256sum` / `certutil -hashfile`).
+- [ ] Send a folder with nested subdirectories: the receiver shows the file count and total size, and
+      the directory tree, names, and contents match.
+- [ ] Send the same folder twice: the second copy lands in `folder (1)` rather than merging or
+      overwriting.
+- [ ] Send a folder containing a symlink: the symlink is skipped and the rest arrives intact.
 - [ ] Sending a second file with the same name produces `name (1).ext` rather than overwriting.
 - [ ] Cancel mid-transfer: both machines show `cancelled` and no `.henad-part` file remains.
 - [ ] Unplug the network mid-transfer: the sender shows `failed`, the receiver does not finalize the

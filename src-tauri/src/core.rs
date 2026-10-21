@@ -4,9 +4,13 @@ use rand::RngCore;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 4;
 /// Control frames are small JSON messages; anything larger is a bug or an attack.
 pub const MAX_FRAME: usize = 64 * 1024;
+/// A folder transfer may not contain more files than this.
+pub const MAX_FOLDER_FILES: usize = 10_000;
+/// Manifest entries per `folder_manifest` frame (keeps each frame well under [`MAX_FRAME`]).
+pub const MANIFEST_CHUNK: usize = 256;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum PathError {
@@ -78,6 +82,18 @@ pub fn format_code(code: &str) -> String {
         .map(|c| String::from_utf8_lossy(c).into_owned())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Canonical manifest digest: count, then each `(path, size)` length-prefixed.
+pub fn manifest_hash(entries: &[(String, u64)]) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(entries.len() as u32).to_be_bytes());
+    for (path, bytes) in entries {
+        hasher.update(&(path.len() as u32).to_be_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update(&bytes.to_be_bytes());
+    }
+    *hasher.finalize().as_bytes()
 }
 
 pub fn fresh_nonce() -> [u8; 32] {
@@ -211,6 +227,16 @@ mod tests {
             safe_relative_path("folder/file.txt").unwrap(),
             PathBuf::from("folder/file.txt")
         );
+    }
+
+    #[test]
+    fn manifest_hash_binds_paths_sizes_and_order() {
+        let base = vec![("a.txt".to_string(), 1u64), ("b/c.txt".to_string(), 2)];
+        let reordered = vec![("b/c.txt".to_string(), 2), ("a.txt".to_string(), 1)];
+        let resized = vec![("a.txt".to_string(), 1u64), ("b/c.txt".to_string(), 3)];
+        assert_eq!(manifest_hash(&base), manifest_hash(&base.clone()));
+        assert_ne!(manifest_hash(&base), manifest_hash(&reordered));
+        assert_ne!(manifest_hash(&base), manifest_hash(&resized));
     }
 
     #[test]

@@ -161,6 +161,21 @@ export default function App() {
     }
   }, []);
 
+  const sendFolder = useCallback(async (device: Device) => {
+    const picked = await open({
+      multiple: false,
+      directory: true,
+      title: `Send a folder to ${device.name}`,
+    });
+    if (typeof picked !== "string") return;
+    try {
+      await api.sendFolder(device.id, picked);
+      setMessage(`Sending folder to ${device.name}…`);
+    } catch (error) {
+      setMessage(String(error));
+    }
+  }, []);
+
   const unpair = useCallback(async (device: Device) => {
     setBusyDevice(device.id);
     try {
@@ -230,6 +245,7 @@ export default function App() {
           devices={devices}
           onPair={pair}
           onSend={send}
+          onSendFolder={sendFolder}
           onUnpair={unpair}
           busyDevice={busyDevice}
         />

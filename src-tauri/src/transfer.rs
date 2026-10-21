@@ -43,7 +43,7 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(15);
 const COMPLETE_TIMEOUT: Duration = Duration::from_secs(60);
 const DATA_TIMEOUT: Duration = Duration::from_secs(60);
 const CONTROL_IDLE: Duration = Duration::from_secs(60 * 60);
-const CONSENT_WINDOW: Duration = Duration::from_secs(60);
+pub(crate) const CONSENT_WINDOW: Duration = Duration::from_secs(60);
 
 /// Validate an outgoing file and queue it. The actual transfer runs in the background.
 pub fn queue(shared: &Arc<Shared>, device_id: &str, path: &str) -> Result<String, String> {
@@ -291,7 +291,7 @@ async fn send_resume(
     .await
 }
 
-fn expect_decision(message: ControlMessage) -> Result<(), NetError> {
+pub(crate) fn expect_decision(message: ControlMessage) -> Result<(), NetError> {
     match message {
         ControlMessage::TransferDecision {
             accepted, error, ..
@@ -431,7 +431,7 @@ async fn stream_file(
 
 /// A single retry absorbs transient LAN and firewall hiccups without hiding real failures:
 /// pinning errors (`key_changed`) and authentication failures are never retried.
-async fn connect_with_retry(
+pub(crate) async fn connect_with_retry(
     address: &str,
     port: u16,
     shared: &Shared,
@@ -510,7 +510,17 @@ pub async fn receive_offer(
     let auto = shared
         .with_db(|db| db::auto_accept(db, &trusted.id))
         .unwrap_or(false);
-    if !auto && !ask_consent(&shared, &trusted, &transfer_id, &file_name, bytes).await {
+    let prompt = IncomingTransfer {
+        transfer_id: transfer_id.clone(),
+        device_id: trusted.id.clone(),
+        device_name: trusted.name.clone(),
+        file_name: file_name.clone(),
+        kind: "file".into(),
+        file_count: 1,
+        bytes,
+        expires_in_secs: 60,
+    };
+    if !auto && !ask_consent(&shared, prompt).await {
         record_declined(&shared, &trusted, &transfer_id, &file_name, bytes);
         let _ = net::send_message(
             &control_writer,
@@ -578,22 +588,9 @@ pub async fn receive_offer(
 }
 
 /// Show an incoming-file prompt and wait for the local decision.
-async fn ask_consent(
-    shared: &Arc<Shared>,
-    trusted: &TrustedPeer,
-    transfer_id: &str,
-    file_name: &str,
-    bytes: u64,
-) -> bool {
+pub(crate) async fn ask_consent(shared: &Arc<Shared>, prompt: IncomingTransfer) -> bool {
+    let transfer_id = prompt.transfer_id.clone();
     let (tx, rx) = oneshot::channel();
-    let prompt = IncomingTransfer {
-        transfer_id: transfer_id.to_owned(),
-        device_id: trusted.id.clone(),
-        device_name: trusted.name.clone(),
-        file_name: file_name.to_owned(),
-        bytes,
-        expires_in_secs: CONSENT_WINDOW.as_secs(),
-    };
     if !shared.register_incoming(PendingIncoming {
         prompt: prompt.clone(),
         decision: Some(tx),
@@ -607,9 +604,9 @@ async fn ask_consent(
         Ok(Ok((accepted, _remember))) => accepted,
         _ => {
             // Timed out or the channel dropped: make sure nothing is left pending.
-            shared.decide_incoming(transfer_id, false, false);
+            shared.decide_incoming(&transfer_id, false, false);
             shared.events.transfer_incoming_closed(IncomingResult {
-                transfer_id: transfer_id.to_owned(),
+                transfer_id,
                 accepted: false,
                 error: Some("the incoming file request expired".into()),
             });
@@ -1050,7 +1047,10 @@ pub fn cancel(shared: &Shared, transfer_id: &str) -> bool {
     found
 }
 
-fn trusted_for(shared: &Shared, authenticated_key: Option<&[u8]>) -> Option<TrustedPeer> {
+pub(crate) fn trusted_for(
+    shared: &Shared,
+    authenticated_key: Option<&[u8]>,
+) -> Option<TrustedPeer> {
     authenticated_key.and_then(|key| {
         shared
             .with_db(|db| db::trusted_peer_by_client_key(db, key))
@@ -1059,7 +1059,7 @@ fn trusted_for(shared: &Shared, authenticated_key: Option<&[u8]>) -> Option<Trus
     })
 }
 
-async fn reject(
+pub(crate) async fn reject(
     writer: &russh::ChannelWriteHalf<russh::server::Msg>,
     transfer_id: Uuid,
     code: ErrorCode,

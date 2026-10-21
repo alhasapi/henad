@@ -23,6 +23,13 @@ pub enum ErrorCode {
     Internal,
 }
 
+/// One file inside a folder transfer; `path` is relative and `/`-separated.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ManifestEntry {
+    pub path: String,
+    pub bytes: u64,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ProtocolError {
     pub code: ErrorCode,
@@ -112,6 +119,63 @@ pub enum ControlMessage {
         request_id: Uuid,
         transfer_id: Uuid,
     },
+    /// Folder transfer: header, then `file_count` entries split across `folder_manifest` frames.
+    FolderOffer {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        root_name: String,
+        file_count: u32,
+        total_bytes: u64,
+    },
+    FolderManifest {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        start: u32,
+        entries: Vec<ManifestEntry>,
+    },
+    FolderManifestEnd {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        manifest_hash: [u8; 32],
+    },
+    FolderDecision {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        accepted: bool,
+        error: Option<ProtocolError>,
+    },
+    /// First frame on a folder's data channel.
+    FolderData {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+    },
+    /// One file's payload follows as exactly `manifest[index].bytes` raw octets.
+    FileStart {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        index: u32,
+    },
+    FileEnd {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        index: u32,
+        blake3: [u8; 32],
+    },
+    /// Receiver -> sender verdict for a folder session.
+    FolderStatus {
+        protocol_version: u16,
+        request_id: Uuid,
+        session_id: Uuid,
+        completed_files: u32,
+        error: Option<ProtocolError>,
+    },
     /// Ask the receiver how much of an interrupted transfer it already has.
     ResumeQuery {
         protocol_version: u16,
@@ -166,6 +230,30 @@ impl ControlMessage {
             | Self::CancelTransfer {
                 protocol_version, ..
             }
+            | Self::FolderOffer {
+                protocol_version, ..
+            }
+            | Self::FolderManifest {
+                protocol_version, ..
+            }
+            | Self::FolderManifestEnd {
+                protocol_version, ..
+            }
+            | Self::FolderDecision {
+                protocol_version, ..
+            }
+            | Self::FolderData {
+                protocol_version, ..
+            }
+            | Self::FileStart {
+                protocol_version, ..
+            }
+            | Self::FileEnd {
+                protocol_version, ..
+            }
+            | Self::FolderStatus {
+                protocol_version, ..
+            }
             | Self::ResumeQuery {
                 protocol_version, ..
             }
@@ -189,6 +277,14 @@ impl ControlMessage {
             Self::TransferComplete { .. } => "transfer_complete",
             Self::TransferStatus { .. } => "transfer_status",
             Self::CancelTransfer { .. } => "cancel_transfer",
+            Self::FolderOffer { .. } => "folder_offer",
+            Self::FolderManifest { .. } => "folder_manifest",
+            Self::FolderManifestEnd { .. } => "folder_manifest_end",
+            Self::FolderDecision { .. } => "folder_decision",
+            Self::FolderData { .. } => "folder_data",
+            Self::FileStart { .. } => "file_start",
+            Self::FileEnd { .. } => "file_end",
+            Self::FolderStatus { .. } => "folder_status",
             Self::ResumeQuery { .. } => "resume_query",
             Self::ResumeState { .. } => "resume_state",
             Self::ResumeTransfer { .. } => "resume_transfer",
@@ -217,6 +313,14 @@ impl ControlMessage {
             | Self::TransferComplete { request_id, .. }
             | Self::TransferStatus { request_id, .. }
             | Self::CancelTransfer { request_id, .. }
+            | Self::FolderOffer { request_id, .. }
+            | Self::FolderManifest { request_id, .. }
+            | Self::FolderManifestEnd { request_id, .. }
+            | Self::FolderDecision { request_id, .. }
+            | Self::FolderData { request_id, .. }
+            | Self::FileStart { request_id, .. }
+            | Self::FileEnd { request_id, .. }
+            | Self::FolderStatus { request_id, .. }
             | Self::ResumeQuery { request_id, .. }
             | Self::ResumeState { request_id, .. }
             | Self::ResumeTransfer { request_id, .. } => *request_id,
@@ -289,6 +393,29 @@ mod tests {
             decode(b"{\"type\":\"nope\"}").unwrap_err().code,
             ErrorCode::Internal
         );
+    }
+
+    #[test]
+    fn folder_manifest_entries_round_trip() {
+        let message = ControlMessage::FolderManifest {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: Uuid::nil(),
+            session_id: Uuid::nil(),
+            start: 256,
+            entries: vec![
+                ManifestEntry {
+                    path: "photos/2026/a.jpg".into(),
+                    bytes: 10,
+                },
+                ManifestEntry {
+                    path: "notes.txt".into(),
+                    bytes: 20,
+                },
+            ],
+        };
+        let encoded = serde_json::to_vec(&message).unwrap();
+        assert_eq!(decode(&encoded).unwrap(), message);
+        assert_eq!(message.kind(), "folder_manifest");
     }
 
     #[test]

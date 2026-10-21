@@ -72,6 +72,9 @@ pub struct IncomingTransfer {
     pub device_id: String,
     pub device_name: String,
     pub file_name: String,
+    /// `"file"` or `"folder"`.
+    pub kind: String,
+    pub file_count: u32,
     pub bytes: u64,
     pub expires_in_secs: u64,
 }
@@ -152,6 +155,12 @@ pub struct PendingPairing {
     pub started: Instant,
 }
 
+/// A folder session that has been accepted and is waiting for its data channel.
+pub struct FolderSlot {
+    pub cancel: Arc<AtomicBool>,
+    pub data_ready: Option<oneshot::Sender<DataChannel>>,
+}
+
 /// An incoming offer waiting for a local accept/decline decision.
 pub struct PendingIncoming {
     pub prompt: IncomingTransfer,
@@ -192,6 +201,7 @@ pub struct Shared {
     pub discovery: Mutex<Option<Arc<Discovery>>>,
     pub pairing: Mutex<HashMap<String, PendingPairing>>,
     pub incoming_prompts: Mutex<HashMap<String, PendingIncoming>>,
+    pub incoming_folders: Mutex<HashMap<String, FolderSlot>>,
     pub live: Mutex<HashMap<String, LiveTransfer>>,
     pub incoming: Mutex<HashMap<String, IncomingSlot>>,
     pub server_config: Arc<russh::server::Config>,
@@ -227,6 +237,7 @@ impl Shared {
             discovery: Mutex::new(None),
             pairing: Mutex::new(HashMap::new()),
             incoming_prompts: Mutex::new(HashMap::new()),
+            incoming_folders: Mutex::new(HashMap::new()),
             live: Mutex::new(HashMap::new()),
             incoming: Mutex::new(HashMap::new()),
             server_config,

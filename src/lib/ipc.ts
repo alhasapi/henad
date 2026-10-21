@@ -64,6 +64,9 @@ export type IncomingTransfer = {
   device_id: string;
   device_name: string;
   file_name: string;
+  /** "file" or "folder". */
+  kind: string;
+  file_count: number;
   bytes: number;
   expires_in_secs: number;
 };
@@ -95,6 +98,8 @@ export const api = {
   unpair: (deviceId: string) => invoke<void>("unpair_device", { deviceId }),
   sendFile: (deviceId: string, path: string) =>
     invoke<string>("send_file", { deviceId, path }),
+  sendFolder: (deviceId: string, path: string) =>
+    invoke<string>("send_folder", { deviceId, path }),
   respondTransfer: (transferId: string, accepted: boolean, remember: boolean) =>
     invoke<void>("respond_transfer", { transferId, accepted, remember }),
   resumeTransfer: (transferId: string) =>

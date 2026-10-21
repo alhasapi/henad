@@ -1,4 +1,4 @@
-# Henad protocol, version 3
+# Henad protocol, version 4
 
 Everything below runs inside an SSH session authenticated with ed25519 keys. There is no
 plaintext side channel: even first-contact pairing happens over SSH, with the host key held as a
@@ -29,9 +29,11 @@ is accepted, exactly `bytes` octets follow on the data channel, then framing res
 | Pairing channel | `pair_offer`, `pair_accept`, `pair_confirm` |
 | Transfer control channel | `transfer_offer`, `transfer_decision`, `cancel_transfer`, `transfer_complete`, `transfer_status` |
 | Resume control channel | `resume_query`, `resume_state`, `resume_transfer`, then the transfer control exchange |
+| Folder control channel | `folder_offer`, `folder_manifest`*, `folder_manifest_end`, `folder_decision`, `folder_status` |
+| Folder data channel | `folder_data`, then per file: `file_start`, raw bytes, `file_end` |
 | Transfer data channel | `transfer_data` frame, then raw file bytes |
 
-Each message carries `protocol_version: u16` (currently `3`) and a `request_id: Uuid`. Peers
+Each message carries `protocol_version: u16` (currently `4`) and a `request_id: Uuid`. Peers
 speaking any other version are rejected with `error_code: unsupported_version`.
 
 ## Pairing
@@ -124,6 +126,30 @@ The sender re-opens a control channel for the same `transfer_id`:
 
 Because the offset is authenticated by the pinned client key and the end-to-end hash covers the
 prefix, a resumed file cannot be assembled from bytes the sender did not agree to.
+
+## Folders
+
+A folder transfer is one session with one manifest and one data channel; files are sent strictly in
+manifest order.
+
+1. `folder_offer { session_id, root_name, file_count, total_bytes }`.
+2. The manifest follows in `folder_manifest { session_id, start, entries }` frames of up to 256
+   entries (each frame stays well below the 64 KiB cap), then `folder_manifest_end { manifest_hash }`.
+   The hash is `blake3(count || for each entry: len(path) || path || u64be(size))`, so the receiver
+   can prove the manifest it assembled is exactly the one the sender committed to.
+3. The receiver rejects the session if `root_name` is not a single safe component, if the entry count
+   or total size disagrees with the offer, if any path fails validation, or if the digest differs.
+   It then asks its user (unless the device is marked "always accept") and answers `folder_decision`.
+4. On acceptance the receiver creates `Downloads/Henad/<root_name>` (collision-renamed), never
+   following a pre-existing symlink, and opens one data channel: `folder_data { session_id }`.
+5. For each manifest index the sender sends `file_start { index }`, exactly `bytes` raw octets, and
+   `file_end { index, blake3 }`. The receiver verifies each file individually and appends the bytes
+   to the session's aggregate progress.
+6. `folder_status { completed_files, error }` closes the session. Any mismatch aborts the session and
+   removes the partially created directory.
+
+Limits: at most 10,000 files per folder; symlinks and special files are skipped when the sender builds
+the manifest; the consent prompt expires after 60 s like a single file.
 
 ## Error codes
 
