@@ -36,7 +36,7 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
-            label: Linux — deb + AppImage
+            label: Linux — deb + AppImage + pacman
             args: --bundles deb,appimage
           - platform: windows-latest
             label: Windows — nsis installer + msi
@@ -75,6 +75,13 @@ jobs:
       - name: Build
         run: npm run tauri build -- ${{ matrix.args }}
 
+      - name: Arch Linux package (pacman)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get install -y libarchive-tools zstd
+          version="${{ inputs.tag || github.ref_name }}"
+          ./scripts/arch-package.sh "${version#v}"
+
       - name: Attach binaries to the release
         uses: softprops/action-gh-release@v2
         with:
@@ -89,4 +96,5 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/arch/*.pkg.tar.zst
             src-tauri/target/release/bundle/rpm/*.rpm

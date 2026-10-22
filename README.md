@@ -30,12 +30,17 @@ Installers are attached to [releases](https://github.com/alhasapi/henad/releases
 | Platform | File | Notes |
 | --- | --- | --- |
 | Windows 10/11 | `Henad_<version>_x64-setup.exe`, `.msi` | Unsigned, so SmartScreen asks for confirmation: *More info → Run anyway*. |
-| Linux | `.deb` (Debian/Ubuntu), `.AppImage` | `chmod +x` the AppImage and run it. |
+| Arch Linux | `henad-<version>-1-x86_64.pkg.tar.zst` | `sudo pacman -U henad-<version>-1-x86_64.pkg.tar.zst`. |
+| Debian/Ubuntu | `.deb` | `sudo apt install ./Henad_<version>_amd64.deb`. |
+| Any Linux | `.AppImage` | `chmod +x` it and run. |
 | macOS | `.dmg` | Unsigned and un-notarized: right-click the app → *Open* the first time. |
 
 Shipping a version means pushing a `v*` tag; the [release workflow](.github/workflows/release.yml)
 builds every platform and attaches the files to the GitHub release. It can also be started from the
 Actions tab with a tag name to produce a draft release first.
+
+Tauri has no pacman target, so `scripts/arch-package.sh` turns the deb payload into a native
+`.pkg.tar.zst` (`.PKGINFO` + `.MTREE`, installed to `/usr/bin/henad` with a hicolor icon set).
 
 ## Run it
 
