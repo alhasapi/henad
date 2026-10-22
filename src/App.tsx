@@ -293,6 +293,8 @@ export default function App() {
         </p>
       ) : null}
 
+      {status?.note ? <p className="notice error">{status.note}</p> : null}
+
       <p className="notice">{message}</p>
 
       <section>

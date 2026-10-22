@@ -35,6 +35,7 @@ pub struct Queued {
 #[derive(Serialize)]
 pub struct AppStatus {
     pub discovery_error: Option<String>,
+    pub note: Option<String>,
     pub port: u16,
     pub protocol_version: u16,
 }
@@ -58,6 +59,7 @@ fn local_identity(state: State<'_, Arc<Shared>>) -> IdentityInfo {
 fn app_status(state: State<'_, Arc<Shared>>) -> AppStatus {
     AppStatus {
         discovery_error: state.discovery_error(),
+        note: state.startup_note(),
         port: state.port(),
         protocol_version: core::PROTOCOL_VERSION,
     }
@@ -157,6 +159,10 @@ async fn cancel_transfer(state: State<'_, Arc<Shared>>, transfer_id: String) -> 
 }
 
 fn app_dir() -> PathBuf {
+    // HENAD_DATA_DIR lets a second instance run as a separate device on one computer.
+    if let Some(dir) = std::env::var_os("HENAD_DATA_DIR") {
+        return PathBuf::from(dir);
+    }
     ProjectDirs::from("org", "Henad", "Henad")
         .map(|dirs| dirs.data_local_dir().to_path_buf())
         .unwrap_or_else(|| std::env::temp_dir().join("henad"))
@@ -170,10 +176,30 @@ fn default_name() -> String {
     format!("Henad on {host}")
 }
 
-async fn bind_listener() -> std::io::Result<TcpListener> {
+/// `HENAD_PORT` pins the port (no fallback); otherwise the default port is used and any free
+/// port is taken when it is busy, so an installed app always starts.
+async fn bind_listener() -> std::io::Result<(TcpListener, Option<String>)> {
+    if let Some(port) = std::env::var("HENAD_PORT")
+        .ok()
+        .and_then(|value| value.trim().parse::<u16>().ok())
+    {
+        let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+        return Ok((listener, None));
+    }
+
     match TcpListener::bind(("0.0.0.0", net::DEFAULT_PORT)).await {
-        Ok(listener) => Ok(listener),
-        Err(_) => TcpListener::bind(("0.0.0.0", 0)).await,
+        Ok(listener) => Ok((listener, None)),
+        Err(_) => {
+            let listener = TcpListener::bind(("0.0.0.0", 0)).await?;
+            let port = listener.local_addr()?.port();
+            Ok((
+                listener,
+                Some(format!(
+                    "Port {} is busy, so this instance listens on {port} instead. Two instances on one computer are the same device unless the second one also sets HENAD_DATA_DIR.",
+                    net::DEFAULT_PORT
+                )),
+            ))
+        }
     }
 }
 
@@ -199,11 +225,14 @@ async fn bootstrap(app: tauri::AppHandle) -> Result<Arc<Shared>, String> {
         dir,
     ));
 
-    let listener = bind_listener()
+    let (listener, note) = bind_listener()
         .await
         .map_err(|e| format!("could not open the Henad port: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     shared.port.store(port, Ordering::SeqCst);
+    if let Ok(mut slot) = shared.startup_note.lock() {
+        *slot = note;
+    }
     tokio::spawn(service::serve(shared.clone(), listener));
 
     {

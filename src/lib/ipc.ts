@@ -42,6 +42,7 @@ export type IdentityInfo = {
 
 export type AppStatus = {
   discovery_error: string | null;
+  note: string | null;
   port: number;
   protocol_version: number;
 };

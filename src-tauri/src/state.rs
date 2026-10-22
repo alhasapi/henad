@@ -206,6 +206,8 @@ pub struct Shared {
     pub incoming: Mutex<HashMap<String, IncomingSlot>>,
     pub server_config: Arc<russh::server::Config>,
     pub port: AtomicU16,
+    /// Set when the instance starts in a degraded but usable way (noisy port, fallback port).
+    pub startup_note: Mutex<Option<String>>,
     pub connections: AtomicUsize,
     /// Live inbound connections per peer address, so one host cannot exhaust the server.
     pub connections_by_ip: Mutex<HashMap<std::net::IpAddr, usize>>,
@@ -244,6 +246,7 @@ impl Shared {
             incoming: Mutex::new(HashMap::new()),
             server_config,
             port: AtomicU16::new(0),
+            startup_note: Mutex::new(None),
             connections: AtomicUsize::new(0),
             connections_by_ip: Mutex::new(HashMap::new()),
             app_dir,
@@ -667,6 +670,10 @@ impl Shared {
 
     pub fn discovery_error(&self) -> Option<String> {
         self.discovery_error.lock().ok().and_then(|e| e.clone())
+    }
+
+    pub fn startup_note(&self) -> Option<String> {
+        self.startup_note.lock().ok().and_then(|note| note.clone())
     }
 
     pub fn upsert_transfer(&self, row: &TransferRow) {
