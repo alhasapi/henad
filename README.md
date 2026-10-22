@@ -19,8 +19,23 @@ Milestone 1 is implemented end to end:
 - **Consent** — incoming files wait for an accept/decline prompt with an optional "always accept this device"; a declined offer is recorded on both sides.
 - **Trust store and history** — SQLite at the platform data directory; paired devices reconnect silently and transfers survive restarts.
 
-Deferred to later milestones: folder resume, transfer history filtering, settings (friendly name,
-destination folder), and macOS builds.
+Deferred to later milestones: folder resume, transfer history filtering, and settings (friendly
+name, destination folder). macOS binaries are built by the release workflow but are not yet
+verified on Apple hardware.
+
+## Download
+
+Installers are attached to [releases](https://github.com/alhasapi/henad/releases):
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows 10/11 | `Henad_<version>_x64-setup.exe`, `.msi` | Unsigned, so SmartScreen asks for confirmation: *More info → Run anyway*. |
+| Linux | `.deb` (Debian/Ubuntu), `.AppImage` | `chmod +x` the AppImage and run it. |
+| macOS | `.dmg` | Unsigned and un-notarized: right-click the app → *Open* the first time. |
+
+Shipping a version means pushing a `v*` tag; the [release workflow](.github/workflows/release.yml)
+builds every platform and attaches the files to the GitHub release. It can also be started from the
+Actions tab with a tag name to produce a draft release first.
 
 ## Run it
 
