@@ -9,11 +9,14 @@ use serde::Serialize;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-const STALE_AFTER_MS: i64 = 15_000;
-const PRUNE_EVERY: Duration = Duration::from_secs(5);
+// mDNS responders announce in a short burst (1 s, 2 s, 4 s, …) and then stay quiet until
+// their records change or a TTL (120 s) lapses. Peers are therefore removed by the
+// browser's own `ServiceRemoved` event — which fires on a goodbye packet or TTL expiry —
+// rather than by a short staleness cutoff, which emptied the list seconds after launch.
+const TTL_HINT_MS: i64 = 120_000;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DiscoveredPeer {
@@ -23,6 +26,7 @@ pub struct DiscoveredPeer {
     pub address: String,
     pub port: u16,
     pub fullname: String,
+    /// Last time the peer was resolved, in epoch milliseconds (for display only).
     pub last_seen: i64,
 }
 
@@ -159,24 +163,6 @@ impl Discovery {
             });
         }
 
-        {
-            let peers = peers.clone();
-            let notify = notify.clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(PRUNE_EVERY);
-                let cutoff = now_ms() - STALE_AFTER_MS;
-                let mut changed = false;
-                if let Ok(mut peers) = peers.lock() {
-                    let before = peers.len();
-                    peers.retain(|_, p| p.last_seen >= cutoff);
-                    changed = peers.len() != before;
-                }
-                if changed {
-                    notify();
-                }
-            });
-        }
-
         Ok(Self {
             daemon,
             fullname,
@@ -185,23 +171,39 @@ impl Discovery {
     }
 
     pub fn peers(&self) -> Vec<DiscoveredPeer> {
+        let now = now_ms();
         let mut peers: Vec<_> = self
             .peers
             .lock()
-            .map(|p| p.values().cloned().collect())
+            .map(|p| {
+                p.values()
+                    .filter(|peer| is_fresh(peer, now))
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
         peers.sort_by_key(|peer| peer.name.to_lowercase());
         peers
     }
 
     pub fn peer(&self, id: &str) -> Option<DiscoveredPeer> {
-        self.peers.lock().ok().and_then(|p| p.get(id).cloned())
+        self.peers
+            .lock()
+            .ok()
+            .and_then(|p| p.get(id).cloned())
+            .filter(|peer| is_fresh(peer, now_ms()))
     }
 
     pub fn shutdown(&self) {
         let _ = self.daemon.unregister(&self.fullname);
         let _ = self.daemon.shutdown();
     }
+}
+
+/// mDNS records expire after their 120 s TTL; treat an older resolution as gone even if the
+/// goodbye packet never arrived (a peer that crashed rather than quit).
+fn is_fresh(peer: &DiscoveredPeer, now: i64) -> bool {
+    now - peer.last_seen <= TTL_HINT_MS
 }
 
 fn now_ms() -> i64 {

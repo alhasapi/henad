@@ -44,9 +44,7 @@ fn two_instances_on_one_machine_find_each_other() {
             assert_eq!(alpha_view.1, 47832);
             assert_eq!(beta_view.0, "Henad alpha");
             assert_eq!(beta_view.1, 47831);
-            alpha.shutdown();
-            beta.shutdown();
-            return;
+            break;
         }
         assert!(
             Instant::now() < deadline,
@@ -56,4 +54,22 @@ fn two_instances_on_one_machine_find_each_other() {
         );
         std::thread::sleep(Duration::from_millis(250));
     }
+
+    // Peers must stay visible while the user pairs (the window is 120 s) — mDNS
+    // announcements stop after the first burst, so a short staleness cutoff would
+    // empty the list a few seconds in.
+    std::thread::sleep(Duration::from_secs(45));
+    assert!(
+        alpha.peer("22222222-2222-2222-2222-222222222222").is_some(),
+        "alpha lost sight of beta: {:?}",
+        alpha.peers()
+    );
+    assert!(
+        beta.peer("11111111-1111-1111-1111-111111111111").is_some(),
+        "beta lost sight of alpha: {:?}",
+        beta.peers()
+    );
+
+    alpha.shutdown();
+    beta.shutdown();
 }
